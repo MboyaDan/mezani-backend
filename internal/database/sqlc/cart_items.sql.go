@@ -19,7 +19,7 @@ INSERT INTO cart_items (
     quantity,
     added_by
 )
-VALUES ($1,$2,$3,$4,$5)
+VALUES ($1, $2, $3, $4, $5)
 RETURNING id, cart_id, menu_item_id, quantity, added_by, created_at
 `
 
@@ -62,27 +62,40 @@ func (q *Queries) ClearCartItems(ctx context.Context, cartID uuid.UUID) error {
 }
 
 const getCartItems = `-- name: GetCartItems :many
-SELECT id, cart_id, menu_item_id, quantity, added_by, created_at
-FROM cart_items
-WHERE cart_id = $1
+SELECT 
+    ci.id,
+    ci.cart_id,
+    ci.menu_item_id,
+    ci.quantity,
+    mi.name
+FROM cart_items ci
+JOIN menu_items mi ON ci.menu_item_id = mi.id
+WHERE ci.cart_id = $1
 `
 
-func (q *Queries) GetCartItems(ctx context.Context, cartID uuid.UUID) ([]CartItem, error) {
+type GetCartItemsRow struct {
+	ID         uuid.UUID
+	CartID     uuid.UUID
+	MenuItemID uuid.UUID
+	Quantity   int32
+	Name       string
+}
+
+func (q *Queries) GetCartItems(ctx context.Context, cartID uuid.UUID) ([]GetCartItemsRow, error) {
 	rows, err := q.db.Query(ctx, getCartItems, cartID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []CartItem
+	var items []GetCartItemsRow
 	for rows.Next() {
-		var i CartItem
+		var i GetCartItemsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.CartID,
 			&i.MenuItemID,
 			&i.Quantity,
-			&i.AddedBy,
-			&i.CreatedAt,
+			&i.Name,
 		); err != nil {
 			return nil, err
 		}

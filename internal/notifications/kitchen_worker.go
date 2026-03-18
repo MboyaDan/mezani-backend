@@ -1,30 +1,21 @@
 package notifications
 
-import (
-	"encoding/json"
-)
+import "encoding/json"
 
 func StartKitchenWorker(
 	bus *EventBus,
 	hub *Hub,
 ) {
-
-	pubsub := bus.Subscribe("orders.new")
+	pubsub := bus.Subscribe("orders.new", "orders.status")
 
 	ch := pubsub.Channel()
 
 	for msg := range ch {
-
-		var event OrderCreatedEvent
-
-		err := json.Unmarshal([]byte(msg.Payload), &event)
-
-		if err != nil {
+		if !json.Valid([]byte(msg.Payload)) {
 			continue
 		}
 
-		data, _ := json.Marshal(event)
-
-		hub.broadcast <- data
+		// Forward raw payload to frontend
+		hub.broadcast <- []byte(msg.Payload)
 	}
 }

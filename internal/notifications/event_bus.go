@@ -16,7 +16,6 @@ func NewEventBus(client *redis.Client) *EventBus {
 }
 
 func (e *EventBus) Publish(channel string, payload interface{}) error {
-
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return err
@@ -25,6 +24,6 @@ func (e *EventBus) Publish(channel string, payload interface{}) error {
 	return e.client.Publish(context.Background(), channel, data).Err()
 }
 
-func (e *EventBus) Subscribe(channel string) *redis.PubSub {
-	return e.client.Subscribe(context.Background(), channel)
+func (e *EventBus) Subscribe(channels ...string) *redis.PubSub {
+	return e.client.Subscribe(context.Background(), channels...)
 }

@@ -1,4 +1,0 @@
-internal/database/postgres.go:1:1: expected 'package', found 'EOF'
-internal/config/config.go:1:1: expected 'package', found 'EOF'
-internal/repository/order_repository.go:1:1: expected 'package', found 'EOF'
-pkg/logger/logger.go:1:1: expected 'package', found 'EOF'

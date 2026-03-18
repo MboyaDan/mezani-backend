@@ -24,16 +24,16 @@ func NewOrderService(q *db.Queries, bus *notifications.EventBus) *OrderService {
 	}
 }
 
+// Submit Cart → Create Order → Send to Kitchen
 func (s *OrderService) SubmitCart(
 	ctx context.Context,
 	tableSessionID uuid.UUID,
 	customerSessionID uuid.UUID,
 	cartID uuid.UUID,
 ) (db.Order, error) {
+
 	// Validate table session
-
 	session, err := s.Queries.GetTableSession(ctx, tableSessionID)
-
 	if err != nil {
 		return db.Order{}, err
 	}
@@ -45,7 +45,8 @@ func (s *OrderService) SubmitCart(
 	if time.Now().After(session.ExpiresAt) {
 		return db.Order{}, errors.New("table session expired")
 	}
-// Create order
+
+	//  Create order
 	order, err := s.Queries.CreateOrder(ctx, db.CreateOrderParams{
 		ID:                uuid.New(),
 		TableSessionID:    tableSessionID,
@@ -55,11 +56,15 @@ func (s *OrderService) SubmitCart(
 	if err != nil {
 		return db.Order{}, err
 	}
-// Get cart items and create order items
+
+	// Get cart items (WITH names now)
 	cartItems, err := s.Queries.GetCartItems(ctx, cartID)
 	if err != nil {
 		return db.Order{}, err
 	}
+
+	//  Create order items + build KDS payload
+	var items []notifications.Item
 
 	for _, item := range cartItems {
 
@@ -72,35 +77,41 @@ func (s *OrderService) SubmitCart(
 		if err != nil {
 			return db.Order{}, err
 		}
-	}
-	// Clear cart
 
-	err = s.Queries.ClearCartItems(ctx, cartID)
-	if err != nil {
+		items = append(items, notifications.Item{
+			Name:     item.Name,
+			Quantity: item.Quantity,
+		})
+	}
+
+	//  Clear cart
+	if err := s.Queries.ClearCartItems(ctx, cartID); err != nil {
 		return db.Order{}, err
 	}
 
-	event := notifications.OrderCreatedEvent{
-		OrderID:      order.ID.String(),
-		TableSession: tableSessionID.String(),
+	// Publish to Redis (KDS)
+	event := notifications.KDSOrderCreatedEvent{
+		OrderID: order.ID.String(),
+		TableID: tableSessionID.String(),
+		Items:   items,
 	}
 
-	err = s.EventBus.Publish("orders.new", event)
-	if err != nil {
-		// log but don't fail request
+	if err := s.EventBus.Publish("orders.new", event); err != nil {
+		// log only, don't fail request
 	}
 
 	return order, nil
 }
 
+// Get Orders
 func (s *OrderService) GetOrdersByTable(
 	ctx context.Context,
 	tableSessionID uuid.UUID,
 ) ([]db.Order, error) {
-
 	return s.Queries.GetOrdersByTableSession(ctx, tableSessionID)
 }
 
+// Update Order Status → Notify Kitchen
 func (s *OrderService) UpdateStatus(
 	ctx context.Context,
 	orderID uuid.UUID,
@@ -127,31 +138,29 @@ func (s *OrderService) UpdateStatus(
 			Status_2: newStatus,
 		},
 	)
-
 	if err != nil {
 
-		// idempotency handling
+		//  idempotency handling
 		latest, err2 := s.Queries.GetOrderByID(ctx, orderID)
 		if err2 != nil {
 			return err
 		}
 
 		if latest.Status == newStatus {
-			// already updated → safe retry
-			return nil
+			return nil // safe retry
 		}
 
 		return errors.New("order status changed by another process")
 	}
 
-	event := notifications.OrderStatusUpdatedEvent{
+	//  Publish status update
+	event := notifications.KDSOrderStatusUpdatedEvent{
 		OrderID: updatedOrder.ID.String(),
 		Status:  updatedOrder.Status,
 	}
 
-	err = s.EventBus.Publish("orders.status", event)
-	if err != nil {
-		// log but don't fail request
+	if err := s.EventBus.Publish("orders.status", event); err != nil {
+		// log only
 	}
 
 	return nil

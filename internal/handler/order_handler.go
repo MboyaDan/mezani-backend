@@ -36,13 +36,13 @@ func (h *OrderHandler) SubmitCart(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid table session id"})
 		return
 	}
-	
+
 	customerSessionID, err := uuid.Parse(req.CustomerSessionID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid customer session id"})
 		return
 	}
-	
+
 	cartID, err := uuid.Parse(req.CartID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid cart id"})
@@ -95,37 +95,4 @@ func (h *OrderHandler) UpdateStatus(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"status": "updated"})
-}
-
-// Add this method for closing bills
-type CloseBillRequest struct {
-	OrderID string `json:"order_id"`
-}
-
-func (h *OrderHandler) CloseBill(c *gin.Context) {
-	var req CloseBillRequest
-
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	orderID, err := uuid.Parse(req.OrderID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid order id"})
-		return
-	}
-
-	// Call the service method to close the bill
-	err = h.Service.CloseBill(
-		c.Request.Context(),
-		orderID,
-	)
-
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"status": "bill closed"})
 }
