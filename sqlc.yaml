@@ -1,0 +1,162 @@
+version: "2"
+
+sql:
+  - schema: "sql/schema"
+    queries: "sql/queries"
+    engine: "postgresql"
+    gen:
+      go:
+        package: "db"
+        out: "internal/database/sqlc"
+        sql_package: "pgx/v5"
+        overrides:
+          # === UUID OVERRIDES ===
+          - column: "*.id"
+            go_type:
+              import: "github.com/google/uuid"
+              type: "UUID"
+          - column: "*.cart_id"
+            go_type:
+              import: "github.com/google/uuid"
+              type: "UUID"
+          - column: "*.table_session_id"
+            go_type:
+              import: "github.com/google/uuid"
+              type: "UUID"
+          - column: "*.customer_session_id"
+            go_type:
+              import: "github.com/google/uuid"
+              type: "UUID"
+          - column: "*.menu_item_id"
+            go_type:
+              import: "github.com/google/uuid"
+              type: "UUID"
+              
+          - column: "*.added_by"
+            go_type:
+              import: "github.com/google/uuid"
+              type: "UUID"
+          - column: "*.order_id"
+            go_type:
+              import: "github.com/google/uuid"
+              type: "UUID"
+          - column: "*.restaurant_id"
+            go_type:
+              import: "github.com/google/uuid"
+              type: "UUID"
+          - column: "*.table_id"
+            go_type:
+              import: "github.com/google/uuid"
+              type: "UUID"
+          - column: "*.menu_id"
+            go_type:
+              import: "github.com/google/uuid"
+              type: "UUID"
+          - column: "*.branch_id"
+            go_type:
+              import: "github.com/google/uuid"
+              type: "UUID"
+          - column: "*.category_id"
+            go_type:
+              import: "github.com/google/uuid"
+              type: "UUID"
+          - column: "*.tenant_id"
+            go_type:
+              import: "github.com/google/uuid"
+              type: "UUID"
+          - column: "shared_carts.created_by"
+            go_type:
+              import: "github.com/google/uuid"
+              type: "UUID"
+          - column: "branches.tenant_id"
+            go_type:
+              import: "github.com/google/uuid"
+              type: "UUID"
+
+          # === BOOLEAN FIELDS ===
+          - column: "*.sold_out"
+            go_type: "bool"
+          - column: "*.available"
+            go_type: "bool"
+          - column: "*.is_special"
+            go_type: "bool"
+
+          # === INTEGER FIELDS ===
+          - column: "*.quantity"
+            go_type: "int32"
+          - column: "*.table_number"
+            go_type: "int32"
+          - column: "*.display_order"
+            go_type: "int32"
+          - column: "*.order"
+            go_type: "int32"
+
+          # === TEXT/STRING FIELDS ===
+          - column: "*.name"
+            go_type: "string"
+          - column: "*.status"
+            go_type: "string"
+          - column: "*.description"
+            go_type: "string"
+            nullable: true
+          - column: "branches.location"
+            go_type: "string"
+          - column: "*.location"
+            go_type: "string"
+
+          # === TIMESTAMP FIELDS - EXPANDED ===
+          # Column-specific timestamp overrides
+          - column: "*.created_at"
+            go_type: "time.Time"
+          - column: "*.updated_at"
+            go_type: "time.Time"
+          - column: "*.started_at"
+            go_type: "time.Time"
+          - column: "*.ended_at"
+            go_type: "time.Time"
+            nullable: true
+          - column: "*.expires_at"
+            go_type: "time.Time"
+          - column: "*.expires_at"
+            nullable: true
+            go_type: "*time.Time"
+          - column: "*.joined_at"
+            go_type: "time.Time"
+          - column: "*.timestamp"
+            go_type: "time.Time"
+          
+          # Database type overrides for all timestamps (catches everything)
+          - db_type: "timestamptz"
+            go_type: "time.Time"
+          - db_type: "timestamptz"
+            nullable: true
+            go_type: "*time.Time"
+          - db_type: "timestamp"
+            go_type: "time.Time"
+          - db_type: "timestamp"
+            nullable: true
+            go_type: "*time.Time"
+
+          # === NUMERIC FIELDS ===
+          - column: "*.price"
+            go_type: "float64"
+
+          # === JSON FIELDS ===
+          - db_type: "json"
+            go_type:
+              import: "encoding/json"
+              type: "RawMessage"
+          - db_type: "json"
+            nullable: true
+            go_type:
+              import: "encoding/json"
+              type: "RawMessage"
+          - db_type: "jsonb"
+            go_type:
+              import: "encoding/json"
+              type: "RawMessage"
+          - db_type: "jsonb"
+            nullable: true
+            go_type:
+              import: "encoding/json"
+              type: "RawMessage"
