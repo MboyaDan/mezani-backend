@@ -1,0 +1,31 @@
+# Environment variables
+.env
+.env.*
+
+# Build files
+bin/
+tmp/
+*.exe
+*.out
+
+# Go workspace / dependencies
+vendor/
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+
+# IDE/editor
+.vscode/
+.idea/
+
+# Test artifacts
+coverage.out
+
+# Database (if local files exist)
+*.db
+
+# Docker (optional)
+docker-compose.override.yml
