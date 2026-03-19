@@ -14,6 +14,7 @@ var RolePermissions = map[Role][]string{
 		"manage_menu",
 		"view_reports",
 		"manage_tables",
+		//"manage_staff",
 	},
 
 	RoleWaiter: {

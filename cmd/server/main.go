@@ -20,9 +20,10 @@ func main() {
 	ctx := context.Background()
 
 	// ================= CONFIG =================
-	dbURL := getEnv("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/restaurant_saas")
+	dbURL := getEnv("DATABASE_URL", "postgres://...")
 	whatsAppToken := getEnv("WHATSAPP_TOKEN", "")
 	phoneID := getEnv("WHATSAPP_PHONE_ID", "")
+	jwtSecret := getEnv("JWT_SECRET", "fallback-secret-key")
 
 	// ================= DATABASE =================
 	dbpool, err := pgxpool.New(ctx, dbURL)
@@ -55,7 +56,7 @@ func main() {
 	tableSessionService := service.NewTableSessionService(queries)
 	customerService := service.NewCustomerSessionService(queries)
 	cartService := service.NewSharedCartService(queries)
-
+	analyticsService := service.NewAnalyticsService(queries)
 	orderService := service.NewOrderService(
 		queries,
 		eventBus,
@@ -63,7 +64,7 @@ func main() {
 
 	billingService := service.NewBillingService(queries, eventBus)
 
-	//authService := service.NewAuthService(queries)
+	authService := service.NewAuthService(queries, []byte(jwtSecret))
 	menuService := service.NewMenuService(queries)
 
 	// ================= HANDLERS =================
@@ -72,17 +73,17 @@ func main() {
 	cartHandler := handler.NewSharedCartHandler(cartService)
 	orderHandler := handler.NewOrderHandler(orderService)
 	wsHandler := handler.NewWSHandler(hub)
-
+	authHandler := handler.NewAuthHandler(authService)
 	billingHandler := handler.NewBillingHandler(billingService)
-
-	// (Assumed handlers — adjust if needed)
-	//authHandler := handler.NewAuthHandler(authService)
 	menuHandler := handler.NewMenuHandler(menuService)
+	analyticsHandler := handler.NewAnalyticsHandler(analyticsService)
+	staffHandler := handler.NewStaffHandler(authService)
 
 	// ================= ROUTER =================
 	r := router.SetupRouter(
 		dbpool,
-		//authHandler,
+		[]byte(jwtSecret),
+		authHandler,
 		tableSessionHandler,
 		customerHandler,
 		cartHandler,
@@ -90,6 +91,8 @@ func main() {
 		wsHandler,
 		menuHandler,
 		billingHandler,
+		analyticsHandler,
+		staffHandler,
 	)
 
 	// ================= SERVER =================

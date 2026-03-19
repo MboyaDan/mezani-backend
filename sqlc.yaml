@@ -124,6 +124,16 @@ sql:
             go_type: "time.Time"
           - column: "*.timestamp"
             go_type: "time.Time"
+          - column: "shared_carts.created_by"
+            go_type:
+              import: "github.com/google/uuid"
+              type: "UUID"
+          - column: "staff_users.created_by" 
+            go_type:
+              import: "github.com/google/uuid"
+              type: "UUID"
+          - column: "tenants.plan"
+            go_type: "string"    
           
           # Database type overrides for all timestamps (catches everything)
           - db_type: "timestamptz"

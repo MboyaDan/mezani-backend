@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Branch struct {
@@ -100,6 +99,7 @@ type StaffUser struct {
 	Email        string
 	PasswordHash string
 	Role         string
+	CreatedBy    uuid.UUID
 	CreatedAt    time.Time
 }
 
@@ -120,6 +120,6 @@ type TableSession struct {
 type Tenant struct {
 	ID        uuid.UUID
 	Name      string
-	Plan      pgtype.Text
+	Plan      string
 	CreatedAt time.Time
 }

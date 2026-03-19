@@ -9,7 +9,6 @@ import (
 	"context"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createTenant = `-- name: CreateTenant :one
@@ -25,7 +24,7 @@ RETURNING id, name, plan, created_at
 type CreateTenantParams struct {
 	ID   uuid.UUID
 	Name string
-	Plan pgtype.Text
+	Plan string
 }
 
 func (q *Queries) CreateTenant(ctx context.Context, arg CreateTenantParams) (Tenant, error) {

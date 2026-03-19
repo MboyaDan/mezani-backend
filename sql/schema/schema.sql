@@ -5,6 +5,14 @@ CREATE TABLE tenants (
     created_at TIMESTAMP DEFAULT NOW()
 );
 
+CREATE TABLE branches (                         
+    id UUID PRIMARY KEY,
+    tenant_id UUID REFERENCES tenants(id),
+    name TEXT NOT NULL,
+    location TEXT,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
 CREATE TABLE staff_users (
     id UUID PRIMARY KEY,
     tenant_id UUID REFERENCES tenants(id),
@@ -13,14 +21,7 @@ CREATE TABLE staff_users (
     email TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
     role TEXT NOT NULL,
-    created_at TIMESTAMP DEFAULT NOW()
-);
-
-CREATE TABLE branches (
-    id UUID PRIMARY KEY,
-    tenant_id UUID REFERENCES tenants(id),
-    name TEXT NOT NULL,
-    location TEXT,
+    created_by UUID REFERENCES staff_users(id), 
     created_at TIMESTAMP DEFAULT NOW()
 );
 

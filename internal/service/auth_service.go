@@ -28,6 +28,7 @@ func (s *AuthService) RegisterStaff(
 	ctx context.Context,
 	tenantID uuid.UUID,
 	branchID uuid.UUID,
+	createdBy uuid.UUID,
 	name string,
 	email string,
 	password string,
@@ -35,7 +36,6 @@ func (s *AuthService) RegisterStaff(
 ) (db.StaffUser, error) {
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), 12)
-
 	if err != nil {
 		return db.StaffUser{}, err
 	}
@@ -48,6 +48,7 @@ func (s *AuthService) RegisterStaff(
 		Email:        email,
 		PasswordHash: string(hash),
 		Role:         role,
+		CreatedBy:    createdBy,
 	})
 }
 
@@ -58,7 +59,6 @@ func (s *AuthService) Login(
 ) (string, error) {
 
 	user, err := s.Queries.GetStaffByEmail(ctx, email)
-
 	if err != nil {
 		return "", errors.New("invalid credentials")
 	}
@@ -67,7 +67,6 @@ func (s *AuthService) Login(
 		[]byte(user.PasswordHash),
 		[]byte(password),
 	)
-
 	if err != nil {
 		return "", errors.New("invalid credentials")
 	}
@@ -82,10 +81,42 @@ func (s *AuthService) Login(
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 
 	tokenString, err := token.SignedString(s.JWTKey)
-
 	if err != nil {
 		return "", err
 	}
 
 	return tokenString, nil
+}
+
+func (s *AuthService) RegisterOwner(
+	ctx context.Context,
+	restaurantName string,
+	email string,
+	password string,
+) (string, error) {
+
+	tenant, err := s.Queries.CreateTenant(ctx, db.CreateTenantParams{
+		ID:   uuid.New(),
+		Name: restaurantName,
+		Plan: "tier1",
+	})
+	if err != nil {
+		return "", err
+	}
+
+	_, err = s.RegisterStaff(
+		ctx,
+		tenant.ID,
+		uuid.Nil, // no branch yet
+		uuid.Nil, // owner created themselves
+		"Owner",
+		email,
+		password,
+		"owner",
+	)
+	if err != nil {
+		return "", err
+	}
+
+	return s.Login(ctx, email, password)
 }

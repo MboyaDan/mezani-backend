@@ -19,10 +19,11 @@ INSERT INTO staff_users (
     name,
     email,
     password_hash,
-    role
+    role,
+    created_by        
 )
-VALUES ($1,$2,$3,$4,$5,$6,$7)
-RETURNING id, tenant_id, branch_id, name, email, password_hash, role, created_at
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+RETURNING id, tenant_id, branch_id, name, email, password_hash, role, created_by, created_at
 `
 
 type CreateStaffUserParams struct {
@@ -33,6 +34,7 @@ type CreateStaffUserParams struct {
 	Email        string
 	PasswordHash string
 	Role         string
+	CreatedBy    uuid.UUID
 }
 
 func (q *Queries) CreateStaffUser(ctx context.Context, arg CreateStaffUserParams) (StaffUser, error) {
@@ -44,6 +46,7 @@ func (q *Queries) CreateStaffUser(ctx context.Context, arg CreateStaffUserParams
 		arg.Email,
 		arg.PasswordHash,
 		arg.Role,
+		arg.CreatedBy,
 	)
 	var i StaffUser
 	err := row.Scan(
@@ -54,13 +57,14 @@ func (q *Queries) CreateStaffUser(ctx context.Context, arg CreateStaffUserParams
 		&i.Email,
 		&i.PasswordHash,
 		&i.Role,
+		&i.CreatedBy,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getBranchStaff = `-- name: GetBranchStaff :many
-SELECT id, tenant_id, branch_id, name, email, password_hash, role, created_at
+SELECT id, tenant_id, branch_id, name, email, password_hash, role, created_by, created_at
 FROM staff_users
 WHERE branch_id = $1
 `
@@ -82,6 +86,7 @@ func (q *Queries) GetBranchStaff(ctx context.Context, branchID uuid.UUID) ([]Sta
 			&i.Email,
 			&i.PasswordHash,
 			&i.Role,
+			&i.CreatedBy,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -95,7 +100,7 @@ func (q *Queries) GetBranchStaff(ctx context.Context, branchID uuid.UUID) ([]Sta
 }
 
 const getStaffByEmail = `-- name: GetStaffByEmail :one
-SELECT id, tenant_id, branch_id, name, email, password_hash, role, created_at
+SELECT id, tenant_id, branch_id, name, email, password_hash, role, created_by, created_at
 FROM staff_users
 WHERE email = $1
 `
@@ -111,6 +116,7 @@ func (q *Queries) GetStaffByEmail(ctx context.Context, email string) (StaffUser,
 		&i.Email,
 		&i.PasswordHash,
 		&i.Role,
+		&i.CreatedBy,
 		&i.CreatedAt,
 	)
 	return i, err

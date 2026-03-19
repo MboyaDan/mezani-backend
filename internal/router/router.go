@@ -3,7 +3,6 @@ package router
 import (
 	"mezzani_backend/internal/handler"
 	"mezzani_backend/internal/middleware"
-	"mezzani_backend/internal/service"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -11,6 +10,7 @@ import (
 
 func SetupRouter(
 	db *pgxpool.Pool,
+	jwtSecret []byte,
 
 	// Handlers
 	authHandler *handler.AuthHandler,
@@ -20,18 +20,23 @@ func SetupRouter(
 	orderHandler *handler.OrderHandler,
 	wsHandler *handler.WSHandler,
 	menuHandler *handler.MenuHandler,
+	billingHandler *handler.BillingHandler,
+	analyticsHandler *handler.AnalyticsHandler,
+	staffHandler *handler.StaffHandler,
 ) *gin.Engine {
 
 	r := gin.Default()
 
-	// JWT secret (should come from env variable)
-	jwtSecret := []byte("super-secret-key")
+	r.Use(middleware.AuthMiddleware(jwtSecret))
 
 	// ========== PUBLIC ROUTES (No Auth) ==========
 	public := r.Group("/api")
 	{
 		// Auth
 		public.POST("/auth/login", authHandler.Login)
+
+		// Owner registration (can be public since it's the first user creating the tenant)
+		public.POST("/auth/register-owner", authHandler.RegisterOwner)
 
 		// Public menu viewing (customers can view menu without login)
 		public.GET("/menus/:menu_id/full", menuHandler.GetFullMenu)
@@ -75,7 +80,6 @@ func SetupRouter(
 		orders := protected.Group("/orders")
 		{
 			// Waiters can create orders
-
 			orders.POST("/submit",
 				middleware.RequirePermission("create_orders"),
 				orderHandler.SubmitCart,
@@ -86,12 +90,12 @@ func SetupRouter(
 				middleware.RequirePermission("update_order_status"),
 				orderHandler.UpdateStatus,
 			)
+		}
 
-			billingService := service.NewBillingService(queries)
-			billingHandler := handler.NewBillingHandler(billingService)
-
-			api.POST(
-				"/billing/close",
+		// ===== BILLING MANAGEMENT =====
+		billing := protected.Group("/billing")
+		{
+			billing.POST("/close",
 				middleware.RequirePermission("close_bill"),
 				billingHandler.CloseBill,
 			)
@@ -100,6 +104,7 @@ func SetupRouter(
 		// ===== MENU MANAGEMENT (Managers/Owners only) =====
 		menu := protected.Group("/menu")
 		menu.Use(middleware.RequirePermission("manage_menu"))
+
 		{
 			// Menu CRUD
 			menu.POST("/", menuHandler.CreateMenu)
@@ -115,14 +120,15 @@ func SetupRouter(
 			menu.PATCH("/items/:id/sold-out", menuHandler.SetItemSoldOut)
 			menu.PATCH("/items/:id/available", menuHandler.SetItemAvailable)
 			menu.PATCH("/items/:id/special", menuHandler.SetDailySpecial)
+
 		}
 
 		// ===== KITCHEN DISPLAY (Kitchen staff) =====
 		kitchen := protected.Group("/kitchen")
 		kitchen.Use(middleware.RequirePermission("view_kitchen_display"))
 		{
-			//update orde status
-			kitchen.GET("/orders", orderHandler.UpdateStatus)
+			// Update order status
+			kitchen.PATCH("/orders/:id/status", orderHandler.UpdateStatus)
 			// Add more kitchen endpoints as needed
 		}
 
@@ -130,9 +136,17 @@ func SetupRouter(
 		reports := protected.Group("/reports")
 		reports.Use(middleware.RequirePermission("view_reports"))
 		{
-			// Add reporting endpoints here
 			// reports.GET("/sales", reportHandler.GetSalesReport)
 			// reports.GET("/popular-items", reportHandler.GetPopularItems)
+			reports.GET("/analytics/dashboard", analyticsHandler.Dashboard)
+		}
+
+		// ===== STAFF MANAGEMENT (Owners only) =====
+		staff := protected.Group("/staff")
+		staff.Use(middleware.RequirePermission("manage_staff"))
+		{
+			staff.POST("/create", staffHandler.CreateStaff)
+			// Add more staff management endpoints as needed
 		}
 	}
 
