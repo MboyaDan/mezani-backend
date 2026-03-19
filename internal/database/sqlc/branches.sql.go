@@ -46,3 +46,35 @@ func (q *Queries) CreateBranch(ctx context.Context, arg CreateBranchParams) (Bra
 	)
 	return i, err
 }
+
+const getBranchesByTenant = `-- name: GetBranchesByTenant :many
+SELECT id, tenant_id, name, location, created_at
+FROM branches
+WHERE tenant_id = $1
+`
+
+func (q *Queries) GetBranchesByTenant(ctx context.Context, tenantID uuid.UUID) ([]Branch, error) {
+	rows, err := q.db.Query(ctx, getBranchesByTenant, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Branch
+	for rows.Next() {
+		var i Branch
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.Name,
+			&i.Location,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

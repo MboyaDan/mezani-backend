@@ -7,3 +7,8 @@ INSERT INTO branches (
 )
 VALUES ($1,$2,$3,$4)
 RETURNING *;
+
+-- name: GetBranchesByTenant :many
+SELECT *
+FROM branches
+WHERE tenant_id = $1;

@@ -12,6 +12,10 @@ type BranchService struct {
 	Queries *db.Queries
 }
 
+func NewBranchService(q *db.Queries) *BranchService {
+	return &BranchService{Queries: q}
+}
+
 func (s *BranchService) CreateBranch(
 	ctx context.Context,
 	tenantID uuid.UUID,

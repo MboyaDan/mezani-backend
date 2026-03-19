@@ -67,6 +67,9 @@ func main() {
 	authService := service.NewAuthService(queries, []byte(jwtSecret))
 	menuService := service.NewMenuService(queries)
 
+	branchService := service.NewBranchService(queries)
+	tableService := service.NewTableService(queries)
+
 	// ================= HANDLERS =================
 	tableSessionHandler := handler.NewTableSessionHandler(tableSessionService)
 	customerHandler := handler.NewCustomerSessionHandler(customerService)
@@ -78,6 +81,8 @@ func main() {
 	menuHandler := handler.NewMenuHandler(menuService)
 	analyticsHandler := handler.NewAnalyticsHandler(analyticsService)
 	staffHandler := handler.NewStaffHandler(authService)
+	branchHandler := handler.NewBranchHandler(branchService)
+	tableHandler := handler.NewTableHandler(tableService)
 
 	// ================= ROUTER =================
 	r := router.SetupRouter(
@@ -93,6 +98,8 @@ func main() {
 		billingHandler,
 		analyticsHandler,
 		staffHandler,
+		tableHandler,
+		branchHandler,
 	)
 
 	// ================= SERVER =================
