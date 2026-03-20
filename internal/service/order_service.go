@@ -15,12 +15,14 @@ import (
 type OrderService struct {
 	Queries  *db.Queries
 	EventBus *notifications.EventBus
+	Activity *ActivityService
 }
 
-func NewOrderService(q *db.Queries, bus *notifications.EventBus) *OrderService {
+func NewOrderService(q *db.Queries, bus *notifications.EventBus, activity *ActivityService) *OrderService {
 	return &OrderService{
 		Queries:  q,
 		EventBus: bus,
+		Activity: activity,
 	}
 }
 
@@ -42,11 +44,10 @@ func (s *OrderService) SubmitCart(
 		return db.Order{}, errors.New("table session is closed")
 	}
 
-	if time.Now().After(session.ExpiresAt) {
+	if !session.ExpiresAt.IsZero() && time.Now().After(session.ExpiresAt) {
 		return db.Order{}, errors.New("table session expired")
 	}
-
-	//  Create order
+	// Create order
 	order, err := s.Queries.CreateOrder(ctx, db.CreateOrderParams{
 		ID:                uuid.New(),
 		TableSessionID:    tableSessionID,
@@ -57,17 +58,26 @@ func (s *OrderService) SubmitCart(
 		return db.Order{}, err
 	}
 
-	// Get cart items (WITH names now)
+	// Log activity
+	staffID, branchID := staffFromContext(ctx)
+	s.Activity.Log(ctx, ActivityParams{
+		StaffID:    staffID,
+		BranchID:   branchID,
+		Action:     "order.create",
+		EntityType: "order",
+		EntityID:   order.ID,
+	})
+
+	// Get cart items
 	cartItems, err := s.Queries.GetCartItems(ctx, cartID)
 	if err != nil {
 		return db.Order{}, err
 	}
 
-	//  Create order items + build KDS payload
+	// Create order items + build KDS payload
 	var items []notifications.Item
 
 	for _, item := range cartItems {
-
 		_, err := s.Queries.CreateOrderItem(ctx, db.CreateOrderItemParams{
 			ID:         uuid.New(),
 			OrderID:    order.ID,
@@ -84,7 +94,7 @@ func (s *OrderService) SubmitCart(
 		})
 	}
 
-	//  Clear cart
+	// Clear cart
 	if err := s.Queries.ClearCartItems(ctx, cartID); err != nil {
 		return db.Order{}, err
 	}
@@ -139,8 +149,7 @@ func (s *OrderService) UpdateStatus(
 		},
 	)
 	if err != nil {
-
-		//  idempotency handling
+		// idempotency handling
 		latest, err2 := s.Queries.GetOrderByID(ctx, orderID)
 		if err2 != nil {
 			return err
@@ -153,7 +162,19 @@ func (s *OrderService) UpdateStatus(
 		return errors.New("order status changed by another process")
 	}
 
-	//  Publish status update
+	// Log activity
+	staffID, branchID := staffFromContext(ctx)
+	s.Activity.Log(ctx, ActivityParams{
+		StaffID:    staffID,
+		BranchID:   branchID,
+		Action:     "order.status_update",
+		EntityType: "order",
+		EntityID:   updatedOrder.ID,
+		OldData:    map[string]any{"status": string(current)},
+		NewData:    map[string]any{"status": newStatus},
+	})
+
+	// Publish status update
 	event := notifications.KDSOrderStatusUpdatedEvent{
 		OrderID: updatedOrder.ID.String(),
 		Status:  updatedOrder.Status,
@@ -164,4 +185,15 @@ func (s *OrderService) UpdateStatus(
 	}
 
 	return nil
+}
+
+// staffFromContext pulls staff_id and branch_id from the auth context
+func staffFromContext(ctx context.Context) (staffID uuid.UUID, branchID uuid.UUID) {
+	if id, ok := ctx.Value("user_id").(string); ok {
+		staffID, _ = uuid.Parse(id)
+	}
+	if id, ok := ctx.Value("branch_id").(string); ok {
+		branchID, _ = uuid.Parse(id)
+	}
+	return
 }

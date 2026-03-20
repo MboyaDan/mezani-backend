@@ -14,15 +14,18 @@ import (
 type BillingService struct {
 	Queries  *db.Queries
 	EventBus *notifications.EventBus
+	Activity *ActivityService
 }
 
 func NewBillingService(
 	q *db.Queries,
 	eventBus *notifications.EventBus,
+	activity *ActivityService,
 ) *BillingService {
 	return &BillingService{
 		Queries:  q,
 		EventBus: eventBus,
+		Activity: activity,
 	}
 }
 
@@ -42,7 +45,7 @@ func (s *BillingService) CloseBill(
 		orderIDs = append(orderIDs, o.ID)
 	}
 
-	//avoid empty slice issue
+	// avoid empty slice issue
 	if len(orderIDs) > 0 {
 		pgIDs := make([]pgtype.UUID, len(orderIDs))
 		for i, id := range orderIDs {
@@ -59,6 +62,16 @@ func (s *BillingService) CloseBill(
 	if err != nil {
 		return err
 	}
+
+	// Log activity
+	staffID, branchID := staffFromContext(ctx)
+	s.Activity.Log(ctx, ActivityParams{
+		StaffID:    staffID,
+		BranchID:   branchID,
+		Action:     "bill.close",
+		EntityType: "table_session",
+		EntityID:   tableSessionID,
+	})
 
 	// publish event AFTER successful DB operations
 	event := map[string]string{

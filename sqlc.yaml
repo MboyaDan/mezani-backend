@@ -31,7 +31,6 @@ sql:
             go_type:
               import: "github.com/google/uuid"
               type: "UUID"
-              
           - column: "*.added_by"
             go_type:
               import: "github.com/google/uuid"
@@ -68,10 +67,35 @@ sql:
             go_type:
               import: "github.com/google/uuid"
               type: "UUID"
+          - column: "staff_users.created_by"
+            go_type:
+              import: "github.com/google/uuid"
+              type: "UUID"
           - column: "branches.tenant_id"
             go_type:
               import: "github.com/google/uuid"
               type: "UUID"
+
+          # === STAFF ACTIVITIES OVERRIDES ===
+          - column: "staff_activities.staff_id"
+            go_type:
+              import: "github.com/google/uuid"
+              type: "UUID"
+          - column: "staff_activities.entity_id"
+            go_type:
+              import: "github.com/google/uuid"
+              type: "UUID"
+          - column: "staff_activities.action"
+            go_type: "string"
+          - column: "staff_activities.entity_type"
+            go_type: "string"
+          - column: "staff_activities.note"
+            go_type: "string"
+          - column: "staff_activities.ip_address"
+            go_type:
+              import: "net/netip"
+              type: "Addr"
+            nullable: true
 
           # === BOOLEAN FIELDS ===
           - column: "*.sold_out"
@@ -99,73 +123,50 @@ sql:
           - column: "*.description"
             go_type: "string"
             nullable: true
-          - column: "branches.location"
-            go_type: "string"
           - column: "*.location"
             go_type: "string"
+          - column: "tenants.plan"
+            go_type: "string"
 
-          # === TIMESTAMP FIELDS - EXPANDED ===
-          # Column-specific timestamp overrides
+          # === TIMESTAMP FIELDS ===
+          - column: "table_sessions.expires_at"
+            go_type:
+              type: "time.Time"
+            nullable: true
+          - column: "*.ended_at"
+            go_type:
+              type: "time.Time"
+            nullable: true
           - column: "*.created_at"
             go_type: "time.Time"
           - column: "*.updated_at"
             go_type: "time.Time"
           - column: "*.started_at"
             go_type: "time.Time"
-          - column: "*.ended_at"
-            go_type: "time.Time"
-            nullable: true
-          - column: "*.expires_at"
-            go_type: "time.Time"
-          - column: "*.expires_at"
-            nullable: true
-            go_type: "*time.Time"
           - column: "*.joined_at"
             go_type: "time.Time"
           - column: "*.timestamp"
             go_type: "time.Time"
-          - column: "shared_carts.created_by"
-            go_type:
-              import: "github.com/google/uuid"
-              type: "UUID"
-          - column: "staff_users.created_by" 
-            go_type:
-              import: "github.com/google/uuid"
-              type: "UUID"
-          - column: "tenants.plan"
-            go_type: "string"    
-          
-          # Database type overrides for all timestamps (catches everything)
-          - db_type: "timestamptz"
-            go_type: "time.Time"
-          - db_type: "timestamptz"
-            nullable: true
-            go_type: "*time.Time"
-          - db_type: "timestamp"
-            go_type: "time.Time"
-          - db_type: "timestamp"
-            nullable: true
-            go_type: "*time.Time"
 
           # === NUMERIC FIELDS ===
           - column: "*.price"
             go_type: "float64"
 
           # === JSON FIELDS ===
-          - db_type: "json"
+          - db_type: "jsonb"
             go_type:
               import: "encoding/json"
               type: "RawMessage"
-          - db_type: "json"
+          - db_type: "jsonb"
             nullable: true
             go_type:
               import: "encoding/json"
               type: "RawMessage"
-          - db_type: "jsonb"
+          - db_type: "json"
             go_type:
               import: "encoding/json"
               type: "RawMessage"
-          - db_type: "jsonb"
+          - db_type: "json"
             nullable: true
             go_type:
               import: "encoding/json"

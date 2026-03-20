@@ -40,6 +40,7 @@ func AuthMiddleware(jwtKey []byte) gin.HandlerFunc {
 		c.Set("user_id", claims["user_id"])
 		c.Set("tenant_id", claims["tenant_id"])
 		c.Set("role", claims["role"])
+		c.Set("branch_id", claims["branch_id"])
 
 		c.Next()
 	}

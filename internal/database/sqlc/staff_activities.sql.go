@@ -11,7 +11,6 @@ import (
 	"net/netip"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createActivity = `-- name: CreateActivity :exec
@@ -32,15 +31,15 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 
 type CreateActivityParams struct {
 	ID         uuid.UUID
-	StaffID    pgtype.UUID
+	StaffID    uuid.UUID
 	BranchID   uuid.UUID
 	Action     string
 	EntityType string
-	EntityID   pgtype.UUID
+	EntityID   uuid.UUID
 	OldData    json.RawMessage
 	NewData    json.RawMessage
-	IpAddress  *netip.Addr
-	Note       pgtype.Text
+	IpAddress  netip.Addr
+	Note       string
 }
 
 func (q *Queries) CreateActivity(ctx context.Context, arg CreateActivityParams) error {

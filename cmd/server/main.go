@@ -60,9 +60,10 @@ func main() {
 	orderService := service.NewOrderService(
 		queries,
 		eventBus,
+		service.NewActivityService(queries),
 	)
 
-	billingService := service.NewBillingService(queries, eventBus)
+	billingService := service.NewBillingService(queries, eventBus, service.NewActivityService(queries))
 
 	authService := service.NewAuthService(queries, []byte(jwtSecret))
 	menuService := service.NewMenuService(queries)

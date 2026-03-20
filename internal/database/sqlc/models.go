@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Branch struct {
@@ -96,15 +95,15 @@ type SharedCart struct {
 
 type StaffActivity struct {
 	ID         uuid.UUID
-	StaffID    pgtype.UUID
+	StaffID    uuid.UUID
 	BranchID   uuid.UUID
 	Action     string
 	EntityType string
-	EntityID   pgtype.UUID
+	EntityID   uuid.UUID
 	OldData    json.RawMessage
 	NewData    json.RawMessage
-	IpAddress  *netip.Addr
-	Note       pgtype.Text
+	IpAddress  netip.Addr
+	Note       string
 	CreatedAt  time.Time
 }
 
