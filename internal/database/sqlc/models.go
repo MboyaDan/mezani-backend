@@ -5,9 +5,12 @@
 package db
 
 import (
+	"encoding/json"
+	"net/netip"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Branch struct {
@@ -89,6 +92,20 @@ type SharedCart struct {
 	CreatedBy      uuid.UUID
 	Status         string
 	CreatedAt      time.Time
+}
+
+type StaffActivity struct {
+	ID         uuid.UUID
+	StaffID    pgtype.UUID
+	BranchID   uuid.UUID
+	Action     string
+	EntityType string
+	EntityID   pgtype.UUID
+	OldData    json.RawMessage
+	NewData    json.RawMessage
+	IpAddress  *netip.Addr
+	Note       pgtype.Text
+	CreatedAt  time.Time
 }
 
 type StaffUser struct {
