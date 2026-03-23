@@ -61,6 +61,7 @@ func main() {
 		queries,
 		eventBus,
 		service.NewActivityService(queries),
+		service.NewInventoryService(queries),
 	)
 
 	billingService := service.NewBillingService(queries, eventBus, service.NewActivityService(queries))
@@ -70,6 +71,7 @@ func main() {
 
 	branchService := service.NewBranchService(queries)
 	tableService := service.NewTableService(queries)
+	inventoryService := service.NewInventoryService(queries)
 
 	// ================= HANDLERS =================
 	tableSessionHandler := handler.NewTableSessionHandler(tableSessionService)
@@ -84,6 +86,7 @@ func main() {
 	staffHandler := handler.NewStaffHandler(authService)
 	branchHandler := handler.NewBranchHandler(branchService)
 	tableHandler := handler.NewTableHandler(tableService)
+	inventoryHandler := handler.NewInventoryHandler(inventoryService)
 
 	// ================= ROUTER =================
 	r := router.SetupRouter(
@@ -101,6 +104,7 @@ func main() {
 		staffHandler,
 		tableHandler,
 		branchHandler,
+		inventoryHandler,
 	)
 
 	// ================= SERVER =================

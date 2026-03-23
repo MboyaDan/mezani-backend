@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"log"
 	"time"
 
 	db "mezzani_backend/internal/database/sqlc"
@@ -13,16 +14,23 @@ import (
 )
 
 type OrderService struct {
-	Queries  *db.Queries
-	EventBus *notifications.EventBus
-	Activity *ActivityService
+	Queries   *db.Queries
+	EventBus  *notifications.EventBus
+	Activity  *ActivityService
+	Inventory *InventoryService
 }
 
-func NewOrderService(q *db.Queries, bus *notifications.EventBus, activity *ActivityService) *OrderService {
+func NewOrderService(
+	q *db.Queries,
+	bus *notifications.EventBus,
+	activity *ActivityService,
+	inventory *InventoryService,
+) *OrderService {
 	return &OrderService{
-		Queries:  q,
-		EventBus: bus,
-		Activity: activity,
+		Queries:   q,
+		EventBus:  bus,
+		Activity:  activity,
+		Inventory: inventory,
 	}
 }
 
@@ -34,7 +42,6 @@ func (s *OrderService) SubmitCart(
 	cartID uuid.UUID,
 ) (db.Order, error) {
 
-	// Validate table session
 	session, err := s.Queries.GetTableSession(ctx, tableSessionID)
 	if err != nil {
 		return db.Order{}, err
@@ -47,7 +54,7 @@ func (s *OrderService) SubmitCart(
 	if !session.ExpiresAt.IsZero() && time.Now().After(session.ExpiresAt) {
 		return db.Order{}, errors.New("table session expired")
 	}
-	// Create order
+
 	order, err := s.Queries.CreateOrder(ctx, db.CreateOrderParams{
 		ID:                uuid.New(),
 		TableSessionID:    tableSessionID,
@@ -58,7 +65,6 @@ func (s *OrderService) SubmitCart(
 		return db.Order{}, err
 	}
 
-	// Log activity
 	staffID, branchID := staffFromContext(ctx)
 	s.Activity.Log(ctx, ActivityParams{
 		StaffID:    staffID,
@@ -68,13 +74,11 @@ func (s *OrderService) SubmitCart(
 		EntityID:   order.ID,
 	})
 
-	// Get cart items
 	cartItems, err := s.Queries.GetCartItems(ctx, cartID)
 	if err != nil {
 		return db.Order{}, err
 	}
 
-	// Create order items + build KDS payload
 	var items []notifications.Item
 
 	for _, item := range cartItems {
@@ -94,12 +98,10 @@ func (s *OrderService) SubmitCart(
 		})
 	}
 
-	// Clear cart
 	if err := s.Queries.ClearCartItems(ctx, cartID); err != nil {
 		return db.Order{}, err
 	}
 
-	// Publish to Redis (KDS)
 	event := notifications.KDSOrderCreatedEvent{
 		OrderID: order.ID.String(),
 		TableID: tableSessionID.String(),
@@ -149,7 +151,6 @@ func (s *OrderService) UpdateStatus(
 		},
 	)
 	if err != nil {
-		// idempotency handling
 		latest, err2 := s.Queries.GetOrderByID(ctx, orderID)
 		if err2 != nil {
 			return err
@@ -173,6 +174,21 @@ func (s *OrderService) UpdateStatus(
 		OldData:    map[string]any{"status": string(current)},
 		NewData:    map[string]any{"status": newStatus},
 	})
+
+	// Deduct stock when order is confirmed
+	if newStatus == "confirmed" {
+		if err := s.Inventory.DeductForOrder(ctx, orderID, branchID); err != nil {
+			log.Println("stock deduction failed:", err)
+			// log only — don't fail the order over stock tracking
+		}
+	}
+
+	// Restore stock when a confirmed order is cancelled
+	if newStatus == "cancelled" && string(current) == "confirmed" {
+		if err := s.Inventory.RestoreForOrder(ctx, orderID, branchID); err != nil {
+			log.Println("stock restore failed:", err)
+		}
+	}
 
 	// Publish status update
 	event := notifications.KDSOrderStatusUpdatedEvent{

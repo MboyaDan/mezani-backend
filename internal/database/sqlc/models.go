@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Branch struct {
@@ -43,6 +44,15 @@ type CustomerSession struct {
 	CreatedAt      time.Time
 }
 
+type InventoryItem struct {
+	ID        uuid.UUID
+	BranchID  uuid.UUID
+	Name      string
+	Stock     int32
+	Threshold int32
+	CreatedAt time.Time
+}
+
 type Menu struct {
 	ID        uuid.UUID
 	BranchID  uuid.UUID
@@ -67,6 +77,13 @@ type MenuItem struct {
 	SoldOut     bool
 	IsSpecial   bool
 	CreatedAt   time.Time
+}
+
+type MenuItemIngredient struct {
+	ID               uuid.UUID
+	MenuItemID       uuid.UUID
+	InventoryItemID  pgtype.UUID
+	QuantityRequired int32
 }
 
 type Order struct {
