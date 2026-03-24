@@ -51,10 +51,6 @@ sql:
             go_type:
               import: "github.com/google/uuid"
               type: "UUID"
-          - column: "*.branch_id"
-            go_type:
-              import: "github.com/google/uuid"
-              type: "UUID"
           - column: "*.category_id"
             go_type:
               import: "github.com/google/uuid"
@@ -63,11 +59,41 @@ sql:
             go_type:
               import: "github.com/google/uuid"
               type: "UUID"
-          - column: "shared_carts.created_by"
+
+          # === BRANCH ID (per table, no wildcard) ===
+          - column: "staff_users.branch_id"      # nullable - owner has no branch
+            go_type:
+              import: "github.com/jackc/pgx/v5/pgtype"
+              type: "UUID"
+            nullable: true
+          - column: "tables.branch_id"
             go_type:
               import: "github.com/google/uuid"
               type: "UUID"
-          - column: "staff_users.created_by"
+          - column: "menus.branch_id"
+            go_type:
+              import: "github.com/google/uuid"
+              type: "UUID"
+          - column: "inventory_items.branch_id"
+            go_type:
+              import: "github.com/google/uuid"
+              type: "UUID"
+          - column: "staff_activities.branch_id"
+            go_type:
+              import: "github.com/google/uuid"
+              type: "UUID"
+          - column: "branches.branch_id"
+            go_type:
+              import: "github.com/google/uuid"
+              type: "UUID"
+
+          # === NULLABLE UUID OVERRIDES ===
+          - column: "staff_users.created_by"     # nullable - owner created themselves
+            go_type:
+              import: "github.com/jackc/pgx/v5/pgtype"
+              type: "UUID"
+            nullable: true
+          - column: "shared_carts.created_by"
             go_type:
               import: "github.com/google/uuid"
               type: "UUID"
@@ -114,6 +140,8 @@ sql:
             go_type: "int32"
           - column: "*.order"
             go_type: "int32"
+          - column: "*.threshold"
+            go_type: "int32"
 
           # === TEXT/STRING FIELDS ===
           - column: "*.name"
@@ -127,10 +155,6 @@ sql:
             go_type: "string"
           - column: "tenants.plan"
             go_type: "string"
-
-        #inventory service overrides
-          - column: "*.threshold"
-            go_type: "int32"
 
           # === TIMESTAMP FIELDS ===
           - column: "table_sessions.expires_at"

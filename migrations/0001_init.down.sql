@@ -1,0 +1,8 @@
+DROP TABLE IF EXISTS staff_activities;
+DROP TABLE IF EXISTS order_items;
+DROP TABLE IF EXISTS orders;
+DROP TABLE IF EXISTS customer_sessions;
+DROP TABLE IF EXISTS table_sessions;
+DROP TABLE IF EXISTS tables;
+DROP TABLE IF EXISTS branches;
+DROP TABLE IF EXISTS tenants;

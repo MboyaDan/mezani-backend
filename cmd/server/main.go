@@ -3,8 +3,8 @@ package main
 import (
 	"context"
 	"log"
-	"os"
 
+	"mezzani_backend/internal/config"
 	"mezzani_backend/internal/database"
 	db "mezzani_backend/internal/database/sqlc"
 	"mezzani_backend/internal/handler"
@@ -13,20 +13,40 @@ import (
 	"mezzani_backend/internal/service"
 	"mezzani_backend/internal/workers"
 
+	"github.com/golang-migrate/migrate/v4"
+	_ "github.com/golang-migrate/migrate/v4/database/postgres"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+func runMigrations(databaseURL string) {
+	m, err := migrate.New(
+		"file://migrations",
+		databaseURL,
+	)
+	if err != nil {
+		log.Fatal("Migration init error:", err)
+	}
+
+	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+		log.Fatal("Migration failed:", err)
+	}
+
+	log.Println("Migrations applied successfully")
+}
 
 func main() {
 	ctx := context.Background()
 
 	// ================= CONFIG =================
-	dbURL := getEnv("DATABASE_URL", "postgres://...")
-	whatsAppToken := getEnv("WHATSAPP_TOKEN", "")
-	phoneID := getEnv("WHATSAPP_PHONE_ID", "")
-	jwtSecret := getEnv("JWT_SECRET", "fallback-secret-key")
+	cfg := config.LoadConfig()
+
+	// ================= MIGRATIONS =================
+	runMigrations(cfg.DatabaseURL)
 
 	// ================= DATABASE =================
-	dbpool, err := pgxpool.New(ctx, dbURL)
+	dbpool, err := pgxpool.New(ctx, cfg.DatabaseURL)
 	if err != nil {
 		log.Fatal("Failed to connect to DB:", err)
 	}
@@ -35,43 +55,53 @@ func main() {
 	queries := db.New(dbpool)
 
 	// ================= REDIS =================
-	redisClient := database.NewRedisClient()
+	redisClient := database.NewRedisClient(cfg.RedisURL)
 	eventBus := notifications.NewEventBus(redisClient)
 
 	// ================= WEBSOCKET HUB =================
 	hub := notifications.NewHub()
 	go hub.Run()
 
-	// ================= WORKERS =================
+	// ================= EXTERNAL SERVICES =================
 	whatsapp := notifications.NewWhatsAppSender(
-		whatsAppToken,
-		phoneID,
+		cfg.WhatsappToken,
+		cfg.WhatsappPhoneID,
 	)
 
+	// ================= CORE SERVICES (SINGLE INSTANCES) =================
+	activityService := service.NewActivityService(queries)
+	inventoryService := service.NewInventoryService(queries)
+
+	// ================= WORKERS =================
 	go notifications.StartWhatsAppWorker(eventBus, whatsapp)
 	go notifications.StartKitchenWorker(eventBus, hub)
 	go workers.StartSessionExpiryWorker(queries)
+	//go workers.StartInventoryWorker(queries) // optional but good
 
-	// ================= SERVICES =================
+	// ================= BUSINESS SERVICES =================
 	tableSessionService := service.NewTableSessionService(queries)
 	customerService := service.NewCustomerSessionService(queries)
 	cartService := service.NewSharedCartService(queries)
 	analyticsService := service.NewAnalyticsService(queries)
+
 	orderService := service.NewOrderService(
 		queries,
 		eventBus,
-		service.NewActivityService(queries),
-		service.NewInventoryService(queries),
+		activityService,
+		inventoryService,
 	)
 
-	billingService := service.NewBillingService(queries, eventBus, service.NewActivityService(queries))
+	billingService := service.NewBillingService(
+		queries,
+		eventBus,
+		activityService,
+	)
 
-	authService := service.NewAuthService(queries, []byte(jwtSecret))
+	authService := service.NewAuthService(queries, []byte(cfg.JWTSecret))
 	menuService := service.NewMenuService(queries)
 
 	branchService := service.NewBranchService(queries)
 	tableService := service.NewTableService(queries)
-	inventoryService := service.NewInventoryService(queries)
 
 	// ================= HANDLERS =================
 	tableSessionHandler := handler.NewTableSessionHandler(tableSessionService)
@@ -91,7 +121,7 @@ func main() {
 	// ================= ROUTER =================
 	r := router.SetupRouter(
 		dbpool,
-		[]byte(jwtSecret),
+		[]byte(cfg.JWTSecret),
 		authHandler,
 		tableSessionHandler,
 		customerHandler,
@@ -108,18 +138,9 @@ func main() {
 	)
 
 	// ================= SERVER =================
-	log.Println("Server starting on :8080")
+	log.Println("Server starting on port:", cfg.Port)
 
-	if err := r.Run(":8080"); err != nil {
+	if err := r.Run(":" + cfg.Port); err != nil {
 		log.Fatal("Server failed:", err)
 	}
-}
-
-// ================= HELPERS =================
-
-func getEnv(key, fallback string) string {
-	if value, exists := os.LookupEnv(key); exists {
-		return value
-	}
-	return fallback
 }

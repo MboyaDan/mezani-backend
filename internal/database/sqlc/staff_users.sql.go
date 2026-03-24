@@ -9,6 +9,7 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createStaffUser = `-- name: CreateStaffUser :one
@@ -29,12 +30,12 @@ RETURNING id, tenant_id, branch_id, name, email, password_hash, role, created_by
 type CreateStaffUserParams struct {
 	ID           uuid.UUID
 	TenantID     uuid.UUID
-	BranchID     uuid.UUID
+	BranchID     pgtype.UUID
 	Name         string
 	Email        string
 	PasswordHash string
 	Role         string
-	CreatedBy    uuid.UUID
+	CreatedBy    pgtype.UUID
 }
 
 func (q *Queries) CreateStaffUser(ctx context.Context, arg CreateStaffUserParams) (StaffUser, error) {
@@ -69,7 +70,7 @@ FROM staff_users
 WHERE branch_id = $1
 `
 
-func (q *Queries) GetBranchStaff(ctx context.Context, branchID uuid.UUID) ([]StaffUser, error) {
+func (q *Queries) GetBranchStaff(ctx context.Context, branchID pgtype.UUID) ([]StaffUser, error) {
 	rows, err := q.db.Query(ctx, getBranchStaff, branchID)
 	if err != nil {
 		return nil, err

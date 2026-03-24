@@ -9,6 +9,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -24,11 +25,20 @@ func NewAuthService(q *db.Queries, key []byte) *AuthService {
 	}
 }
 
+// uuidToPgtype converts a uuid.UUID to pgtype.UUID
+// Pass uuid.Nil to get a null pgtype.UUID
+func uuidToPgtype(id uuid.UUID) pgtype.UUID {
+	if id == uuid.Nil {
+		return pgtype.UUID{Valid: false}
+	}
+	return pgtype.UUID{Bytes: id, Valid: true}
+}
+
 func (s *AuthService) RegisterStaff(
 	ctx context.Context,
 	tenantID uuid.UUID,
-	branchID uuid.UUID,
-	createdBy uuid.UUID,
+	branchID uuid.UUID, // pass uuid.Nil for owner
+	createdBy uuid.UUID, // pass uuid.Nil for self-registered
 	name string,
 	email string,
 	password string,
@@ -43,12 +53,12 @@ func (s *AuthService) RegisterStaff(
 	return s.Queries.CreateStaffUser(ctx, db.CreateStaffUserParams{
 		ID:           uuid.New(),
 		TenantID:     tenantID,
-		BranchID:     branchID,
+		BranchID:     uuidToPgtype(branchID), // 👈 null safe
 		Name:         name,
 		Email:        email,
 		PasswordHash: string(hash),
 		Role:         role,
-		CreatedBy:    createdBy,
+		CreatedBy:    uuidToPgtype(createdBy), // 👈 null safe
 	})
 }
 
@@ -71,10 +81,16 @@ func (s *AuthService) Login(
 		return "", errors.New("invalid credentials")
 	}
 
+	// Extract branch_id safely — may be null for owners
+	var branchID uuid.UUID
+	if user.BranchID.Valid {
+		branchID = user.BranchID.Bytes
+	}
+
 	claims := jwt.MapClaims{
 		"user_id":   user.ID,
 		"tenant_id": user.TenantID,
-		"branch_id": user.BranchID,
+		"branch_id": branchID, // uuid.Nil for owners, real ID for staff
 		"role":      user.Role,
 		"exp":       time.Now().Add(24 * time.Hour).Unix(),
 	}
@@ -96,6 +112,7 @@ func (s *AuthService) RegisterOwner(
 	password string,
 ) (string, error) {
 
+	// 1. Create tenant
 	tenant, err := s.Queries.CreateTenant(ctx, db.CreateTenantParams{
 		ID:   uuid.New(),
 		Name: restaurantName,
@@ -105,10 +122,11 @@ func (s *AuthService) RegisterOwner(
 		return "", err
 	}
 
+	// 2. Create owner — no branch, created themselves
 	_, err = s.RegisterStaff(
 		ctx,
 		tenant.ID,
-		uuid.Nil, // no branch yet
+		uuid.Nil, // no branch for owner
 		uuid.Nil, // owner created themselves
 		"Owner",
 		email,

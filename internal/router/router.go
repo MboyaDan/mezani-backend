@@ -25,6 +25,7 @@ func SetupRouter(
 	staffHandler *handler.StaffHandler,
 	tableHandler *handler.TableHandler,
 	branchHandler *handler.BranchHandler,
+	inventoryHandler *handler.InventoryHandler,
 ) *gin.Engine {
 
 	r := gin.Default()
@@ -56,30 +57,18 @@ func SetupRouter(
 			table.POST("/:id/close", tableSessionHandler.CloseSession)
 			table.POST("/heartbeat", tableSessionHandler.Heartbeat)
 		}
-
-		// ===== CUSTOMER MANAGEMENT =====
-		customer := protected.Group("/customer")
-		{
-			customer.POST("/join", customerHandler.JoinTable)
-			customer.GET("/table/:table_session_id", customerHandler.ListCustomers)
-			customer.GET("/:id", customerHandler.GetCustomer)
-		}
-
-		// ===== CART OPERATIONS =====
-		cart := protected.Group("/cart")
-		{
-			cart.POST("/create", cartHandler.CreateCart)
-			cart.POST("/join", cartHandler.JoinCart)
-			cart.POST("/add-item", cartHandler.AddItem)
-		}
+		// ===== CUSTOMER FLOW (Public - QR scan, no JWT) =====
+		public.POST("/customer/join", customerHandler.JoinTable)
+		public.GET("/customer/table/:table_session_id", customerHandler.ListCustomers)
+		public.GET("/customer/:id", customerHandler.GetCustomer)
+		public.POST("/cart/create", cartHandler.CreateCart)
+		public.POST("/cart/join", cartHandler.JoinCart)
+		public.POST("/cart/add-item", cartHandler.AddItem)
+		public.POST("/orders/submit", orderHandler.SubmitCart)
 
 		// ===== ORDER MANAGEMENT =====
 		orders := protected.Group("/orders")
 		{
-			orders.POST("/submit",
-				middleware.RequirePermission("create_orders"),
-				orderHandler.SubmitCart,
-			)
 			orders.PATCH("/:id/status",
 				middleware.RequirePermission("update_order_status"),
 				orderHandler.UpdateStatus,
@@ -106,6 +95,19 @@ func SetupRouter(
 			menu.PATCH("/items/:id/sold-out", menuHandler.SetItemSoldOut)
 			menu.PATCH("/items/:id/available", menuHandler.SetItemAvailable)
 			menu.PATCH("/items/:id/special", menuHandler.SetDailySpecial)
+			//menu.PATCH("/items/:id/regular", menuHandler.UnsetDailySpecial)
+		}
+
+		// ===== INVENTORY MANAGEMENT =====
+		inventory := protected.Group("/branches/:branch_id/inventory")
+		inventory.Use(middleware.RequirePermission("manage_inventory"))
+		{
+			inventory.POST("/", inventoryHandler.CreateItem)
+			inventory.GET("/", inventoryHandler.ListItems)
+			inventory.GET("/:item_id", inventoryHandler.GetItem)
+			inventory.PATCH("/low-stock", inventoryHandler.LowStockAlerts)
+			inventory.PATCH("/:item_id/stock", inventoryHandler.SetStock)
+
 		}
 
 		// ===== KITCHEN DISPLAY =====

@@ -1,0 +1,42 @@
+services:
+  postgres:
+    image: postgres:15
+    container_name: mezzani_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: mezzani
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:                                         
+      test: ["CMD-SHELL", "pg_isready -U postgres -d mezzani"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7
+    container_name: mezzani_redis
+    ports:
+      - "6379:6379"
+
+  backend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: mezzani_backend
+    depends_on:
+      postgres:
+        condition: service_healthy 
+      redis:
+        condition: service_started
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+
+volumes:
+  postgres_data:

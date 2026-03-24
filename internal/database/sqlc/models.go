@@ -127,12 +127,12 @@ type StaffActivity struct {
 type StaffUser struct {
 	ID           uuid.UUID
 	TenantID     uuid.UUID
-	BranchID     uuid.UUID
+	BranchID     pgtype.UUID
 	Name         string
 	Email        string
 	PasswordHash string
 	Role         string
-	CreatedBy    uuid.UUID
+	CreatedBy    pgtype.UUID
 	CreatedAt    time.Time
 }
 
