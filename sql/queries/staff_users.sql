@@ -21,3 +21,13 @@ WHERE email = $1;
 SELECT *
 FROM staff_users
 WHERE branch_id = $1;
+
+-- name: UpdateStaffPassword :exec
+UPDATE staff_users
+SET password_hash = $2
+WHERE id = $1;
+
+-- name: GetStaffByID :one
+SELECT *
+FROM staff_users
+WHERE id = $1;

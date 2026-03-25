@@ -7,13 +7,19 @@ import (
 )
 
 type Config struct {
-	AppEnv          string
-	Port            string
-	DatabaseURL     string
-	RedisURL        string
-	JWTSecret       string
-	WhatsappToken   string
-	WhatsappPhoneID string
+	AppEnv           string
+	Port             string
+	DatabaseURL      string
+	RedisURL         string
+	JWTSecret        string
+	WhatsappToken    string
+	WhatsappPhoneID  string
+	AllowedOrigins   []string
+	ResendAPIKey     string
+	ResendFromEmail  string
+	FrontendURL      string
+	TelegramBotToken string
+	TelegramChatID   string
 }
 
 func LoadConfig() *Config {
@@ -35,6 +41,13 @@ func LoadConfig() *Config {
 		JWTSecret:       viper.GetString("JWT_SECRET"),
 		WhatsappToken:   viper.GetString("WHATSAPP_TOKEN"),
 		WhatsappPhoneID: viper.GetString("WHATSAPP_PHONE_ID"),
+		AllowedOrigins:  viper.GetStringSlice("ALLOWED_ORIGINS"),
+		ResendAPIKey:    viper.GetString("RESEND_API_KEY"),
+		ResendFromEmail: viper.GetString("RESEND_FROM_EMAIL"),
+		FrontendURL:     viper.GetString("FRONTEND_URL"),
+
+		TelegramBotToken: viper.GetString("TELEGRAM_BOT_TOKEN"),
+		TelegramChatID:   viper.GetString("TELEGRAM_CHAT_ID"),
 	}
 	if config.DatabaseURL == "" {
 		log.Fatal("DATABASE_URL is required")

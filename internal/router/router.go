@@ -1,16 +1,25 @@
 package router
 
 import (
+	"context"
 	"mezzani_backend/internal/handler"
 	"mezzani_backend/internal/middleware"
+	"mezzani_backend/internal/notifications"
+	"mezzani_backend/internal/service"
+	"time"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func SetupRouter(
 	db *pgxpool.Pool,
 	jwtSecret []byte,
+	allowedOrigins []string,
+	branchService *service.BranchService,
+	alerts *notifications.AlertService,
 
 	// Handlers
 	authHandler *handler.AuthHandler,
@@ -26,21 +35,60 @@ func SetupRouter(
 	tableHandler *handler.TableHandler,
 	branchHandler *handler.BranchHandler,
 	inventoryHandler *handler.InventoryHandler,
+	passwordResetHandler *handler.PasswordResetHandler,
 ) *gin.Engine {
 
-	r := gin.Default()
+	// Initialize Gin router
+	r := gin.New()
+	r.Use(middleware.RecoveryWithAlerts(alerts))
+
+	r.Use(middleware.Logger())
+
+	// ========== CORS ==========
+	r.Use(cors.New(cors.Config{
+		AllowOrigins: allowedOrigins,
+		AllowMethods: []string{"GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"},
+		AllowHeaders: []string{
+			"Origin",
+			"Content-Type",
+			"Authorization",
+			"Accept",
+		},
+		ExposeHeaders:    []string{"Content-Length"},
+		AllowCredentials: true,
+		MaxAge:           12 * time.Hour,
+	}))
 
 	// ========== PUBLIC ROUTES (No Auth) ==========
 	public := r.Group("/api")
 	{
-		public.POST("/auth/register-owner", authHandler.RegisterOwner)
-		public.POST("/auth/login", authHandler.Login)
+		// Password reset flow
+		public.POST("/auth/forgot-password",
+			middleware.StrictRateLimit(),
+			passwordResetHandler.ForgotPassword,
+		)
+		public.POST("/auth/reset-password",
+			middleware.StrictRateLimit(),
+			passwordResetHandler.ResetPassword,
+		)
+
+		public.POST("/auth/refresh", authHandler.RefreshToken)
+		public.POST("/auth/logout", authHandler.Logout)
+		// Auth routes (registration/login)
+		public.POST(
+			"/auth/register-owner",
+			middleware.StrictRateLimit(),
+			authHandler.RegisterOwner)
+
+		public.POST("/auth/login",
+			middleware.StrictRateLimit(),
+			authHandler.Login)
 
 		// Public menu viewing
-		public.GET("/menus/:menu_id/full", menuHandler.GetFullMenu)
-		public.GET("/menus/branch/:branch_id", menuHandler.GetBranchMenus)
-		public.GET("/menus/:menu_id/categories", menuHandler.GetMenuCategories)
-		public.GET("/categories/:category_id/items", menuHandler.GetCategoryItems)
+		public.GET("/menus/:menu_id/full", middleware.RelaxedRateLimit(), menuHandler.GetFullMenu)
+		public.GET("/menus/branch/:branch_id", middleware.RelaxedRateLimit(), menuHandler.GetBranchMenus)
+		public.GET("/menus/:menu_id/categories", middleware.RelaxedRateLimit(), menuHandler.GetMenuCategories)
+		public.GET("/categories/:category_id/items", middleware.RelaxedRateLimit(), menuHandler.GetCategoryItems)
 
 		// WebSocket (handles its own auth via connection)
 		r.GET("/ws/kitchen", wsHandler.HandleWS)
@@ -49,6 +97,7 @@ func SetupRouter(
 	// ========== PROTECTED ROUTES (Auth Required) ==========
 	protected := r.Group("/api")
 	protected.Use(middleware.AuthMiddleware(jwtSecret))
+	protected.Use(middleware.RelaxedRateLimit())
 	{
 		// ===== TABLE SESSION MANAGEMENT =====
 		table := protected.Group("/table-session")
@@ -58,13 +107,13 @@ func SetupRouter(
 			table.POST("/heartbeat", tableSessionHandler.Heartbeat)
 		}
 		// ===== CUSTOMER FLOW (Public - QR scan, no JWT) =====
-		public.POST("/customer/join", customerHandler.JoinTable)
-		public.GET("/customer/table/:table_session_id", customerHandler.ListCustomers)
-		public.GET("/customer/:id", customerHandler.GetCustomer)
-		public.POST("/cart/create", cartHandler.CreateCart)
-		public.POST("/cart/join", cartHandler.JoinCart)
-		public.POST("/cart/add-item", cartHandler.AddItem)
-		public.POST("/orders/submit", orderHandler.SubmitCart)
+		public.POST("/customer/join", middleware.ModerateRateLimit(), customerHandler.JoinTable)
+		public.GET("/customer/table/:table_session_id", middleware.ModerateRateLimit(), customerHandler.ListCustomers)
+		public.GET("/customer/:id", middleware.ModerateRateLimit(), customerHandler.GetCustomer)
+		public.POST("/cart/create", middleware.ModerateRateLimit(), cartHandler.CreateCart)
+		public.POST("/cart/join", middleware.ModerateRateLimit(), cartHandler.JoinCart)
+		public.POST("/cart/add-item", middleware.ModerateRateLimit(), cartHandler.AddItem)
+		public.POST("/orders/submit", middleware.ModerateRateLimit(), orderHandler.SubmitCart)
 
 		// ===== ORDER MANAGEMENT =====
 		orders := protected.Group("/orders")
@@ -100,7 +149,17 @@ func SetupRouter(
 
 		// ===== INVENTORY MANAGEMENT =====
 		inventory := protected.Group("/branches/:branch_id/inventory")
+
 		inventory.Use(middleware.RequirePermission("manage_inventory"))
+
+		inventory.Use(middleware.TenantBranchGuard(func(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
+
+			branch, err := branchService.GetBranchByID(ctx, id)
+
+			return branch.TenantID, err
+
+		}))
+
 		{
 			inventory.POST("/", inventoryHandler.CreateItem)
 			inventory.GET("/", inventoryHandler.ListItems)
@@ -132,12 +191,30 @@ func SetupRouter(
 		}
 
 		// ===== OWNER — BRANCHES & TABLES =====
+
 		owner := protected.Group("/owner")
+
 		owner.Use(middleware.RequirePermission("manage_branches"))
+
 		{
+
 			owner.POST("/branches", branchHandler.CreateBranch)
-			owner.POST("/branches/:id/tables", tableHandler.CreateTable)
+
+			owner.POST("/branches/:id/tables",
+
+				middleware.TenantBranchGuard(func(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
+
+					branch, err := branchService.GetBranchByID(ctx, id)
+
+					return branch.TenantID, err
+
+				}),
+
+				tableHandler.CreateTable,
+			)
+
 		}
+
 	}
 
 	return r

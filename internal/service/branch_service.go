@@ -30,3 +30,7 @@ func (s *BranchService) CreateBranch(
 		Location: location,
 	})
 }
+
+func (s *BranchService) GetBranchByID(ctx context.Context, branchID uuid.UUID) (db.Branch, error) {
+	return s.Queries.GetBranchByID(ctx, branchID)
+}

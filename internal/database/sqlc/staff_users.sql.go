@@ -122,3 +122,42 @@ func (q *Queries) GetStaffByEmail(ctx context.Context, email string) (StaffUser,
 	)
 	return i, err
 }
+
+const getStaffByID = `-- name: GetStaffByID :one
+SELECT id, tenant_id, branch_id, name, email, password_hash, role, created_by, created_at
+FROM staff_users
+WHERE id = $1
+`
+
+func (q *Queries) GetStaffByID(ctx context.Context, id uuid.UUID) (StaffUser, error) {
+	row := q.db.QueryRow(ctx, getStaffByID, id)
+	var i StaffUser
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.BranchID,
+		&i.Name,
+		&i.Email,
+		&i.PasswordHash,
+		&i.Role,
+		&i.CreatedBy,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const updateStaffPassword = `-- name: UpdateStaffPassword :exec
+UPDATE staff_users
+SET password_hash = $2
+WHERE id = $1
+`
+
+type UpdateStaffPasswordParams struct {
+	ID           uuid.UUID
+	PasswordHash string
+}
+
+func (q *Queries) UpdateStaffPassword(ctx context.Context, arg UpdateStaffPasswordParams) error {
+	_, err := q.db.Exec(ctx, updateStaffPassword, arg.ID, arg.PasswordHash)
+	return err
+}

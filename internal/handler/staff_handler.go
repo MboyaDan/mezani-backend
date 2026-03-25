@@ -15,20 +15,30 @@ func NewStaffHandler(s *service.AuthService) *StaffHandler {
 	return &StaffHandler{Service: s}
 }
 
+var validRoles = map[string]bool{
+	"manager": true,
+	"waiter":  true,
+	"kitchen": true,
+	"cashier": true,
+}
+
 type CreateStaffRequest struct {
-	Name     string `json:"name"`
-	Email    string `json:"email"`
-	Password string `json:"password"`
-	Role     string `json:"role"`
-	BranchID string `json:"branch_id"`
+	Name     string `json:"name"      binding:"required,min=2,max=100"`
+	Email    string `json:"email"     binding:"required,email"`
+	Password string `json:"password"  binding:"required,min=6"`
+	Role     string `json:"role"      binding:"required"`
+	BranchID string `json:"branch_id" binding:"required,uuid"`
 }
 
 func (h *StaffHandler) CreateStaff(c *gin.Context) {
-
 	var req CreateStaffRequest
-
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+
+	if !validRoles[req.Role] {
+		c.JSON(400, gin.H{"error": "invalid role, must be one of: manager, waiter, kitchen, cashier"})
 		return
 	}
 
@@ -63,7 +73,6 @@ func (h *StaffHandler) CreateStaff(c *gin.Context) {
 		req.Password,
 		req.Role,
 	)
-
 	if err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return

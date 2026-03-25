@@ -8,6 +8,11 @@ var RolePermissions = map[Role][]string{
 		"manage_menu",
 		"view_reports",
 		"manage_tables",
+		"manage_inventory",
+		"create_orders",
+		"update_order_status",
+		"view_kitchen_display",
+		"close_bill",
 	},
 
 	RoleManager: {

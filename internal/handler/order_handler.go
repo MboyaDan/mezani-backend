@@ -17,82 +17,56 @@ func NewOrderHandler(s *service.OrderService) *OrderHandler {
 	return &OrderHandler{Service: s}
 }
 
+var validOrderStatuses = map[string]bool{
+	"accepted":  true,
+	"preparing": true,
+	"ready":     true,
+	"served":    true,
+	"paid":      true,
+}
+
 type SubmitCartRequest struct {
-	TableSessionID    string `json:"table_session_id"`
-	CustomerSessionID string `json:"customer_session_id"`
-	CartID            string `json:"cart_id"`
+	TableSessionID    string `json:"table_session_id"    binding:"required,uuid"`
+	CustomerSessionID string `json:"customer_session_id" binding:"required,uuid"`
+	CartID            string `json:"cart_id"             binding:"required,uuid"`
 }
 
 func (h *OrderHandler) SubmitCart(c *gin.Context) {
 	var req SubmitCartRequest
-
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
-	tableSessionID, err := uuid.Parse(req.TableSessionID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid table session id"})
-		return
-	}
-
-	customerSessionID, err := uuid.Parse(req.CustomerSessionID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid customer session id"})
-		return
-	}
-
-	cartID, err := uuid.Parse(req.CartID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid cart id"})
-		return
-	}
-
-	order, err := h.Service.SubmitCart(
-		c.Request.Context(),
-		tableSessionID,
-		customerSessionID,
-		cartID,
-	)
-
+	tableSessionID, _ := uuid.Parse(req.TableSessionID)
+	customerSessionID, _ := uuid.Parse(req.CustomerSessionID)
+	cartID, _ := uuid.Parse(req.CartID)
+	order, err := h.Service.SubmitCart(c.Request.Context(), tableSessionID, customerSessionID, cartID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
 	c.JSON(http.StatusOK, order)
 }
 
 type UpdateStatusRequest struct {
-	OrderID string `json:"order_id"`
-	Status  string `json:"status"`
+	OrderID string `json:"order_id" binding:"required,uuid"`
+	Status  string `json:"status"   binding:"required"`
 }
 
 func (h *OrderHandler) UpdateStatus(c *gin.Context) {
 	var req UpdateStatusRequest
-
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
-	orderID, err := uuid.Parse(req.OrderID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid order id"})
+	if !validOrderStatuses[req.Status] {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid status, must be one of: accepted, preparing, ready, served, paid"})
 		return
 	}
-
-	err = h.Service.UpdateStatus(
-		c.Request.Context(),
-		orderID,
-		req.Status,
-	)
-
-	if err != nil {
+	orderID, _ := uuid.Parse(req.OrderID)
+	if err := h.Service.UpdateStatus(c.Request.Context(), orderID, req.Status); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
 	c.JSON(http.StatusOK, gin.H{"status": "updated"})
 }

@@ -185,3 +185,43 @@ CREATE INDEX idx_staff_activities_created_at ON staff_activities (created_at DES
 CREATE INDEX idx_inventory_items_branch_id       ON inventory_items (branch_id);
 CREATE INDEX idx_menu_item_ingredients_menu_item  ON menu_item_ingredients (menu_item_id);
 CREATE INDEX idx_menu_item_ingredients_inventory  ON menu_item_ingredients (inventory_item_id);
+
+-- ============================================================
+-- ADDITIONAL INDEXES (query performance)
+-- ============================================================
+
+-- Orders: most queried by table_session_id and status
+CREATE INDEX idx_orders_table_session_id  ON orders (table_session_id);
+CREATE INDEX idx_orders_status            ON orders (status);
+CREATE INDEX idx_orders_created_at        ON orders (created_at DESC);
+
+-- Order items: queried by order_id
+CREATE INDEX idx_order_items_order_id     ON order_items (order_id);
+
+-- Table sessions: queried by table_id + status constantly (active session lookup)
+CREATE INDEX idx_table_sessions_table_id  ON table_sessions (table_id);
+CREATE INDEX idx_table_sessions_status    ON table_sessions (status);
+CREATE INDEX idx_table_sessions_expires_at ON table_sessions (expires_at)
+    WHERE status = 'active'; -- partial index, only active sessions need expiry checks
+
+-- Customer sessions: queried by table_session_id
+CREATE INDEX idx_customer_sessions_table_session_id ON customer_sessions (table_session_id);
+
+-- Cart items: queried by cart_id
+CREATE INDEX idx_cart_items_cart_id       ON cart_items (cart_id);
+
+-- Shared carts: queried by table_session_id
+CREATE INDEX idx_shared_carts_table_session_id ON shared_carts (table_session_id);
+
+-- Staff users: queried by email (login) and tenant_id
+CREATE INDEX idx_staff_users_email        ON staff_users (email);
+CREATE INDEX idx_staff_users_tenant_id    ON staff_users (tenant_id);
+
+-- Menu: queried by branch_id
+CREATE INDEX idx_menus_branch_id          ON menus (branch_id);
+
+-- Menu categories: queried by menu_id
+CREATE INDEX idx_menu_categories_menu_id  ON menu_categories (menu_id);
+
+-- Menu items: queried by category_id
+CREATE INDEX idx_menu_items_category_id   ON menu_items (category_id);

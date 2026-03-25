@@ -47,6 +47,25 @@ func (q *Queries) CreateBranch(ctx context.Context, arg CreateBranchParams) (Bra
 	return i, err
 }
 
+const getBranchByID = `-- name: GetBranchByID :one
+SELECT id, tenant_id, name, location, created_at
+FROM branches
+WHERE id = $1
+`
+
+func (q *Queries) GetBranchByID(ctx context.Context, id uuid.UUID) (Branch, error) {
+	row := q.db.QueryRow(ctx, getBranchByID, id)
+	var i Branch
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Name,
+		&i.Location,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getBranchesByTenant = `-- name: GetBranchesByTenant :many
 SELECT id, tenant_id, name, location, created_at
 FROM branches

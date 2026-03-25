@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 
+	"mezzani_backend/internal/cache"
 	"mezzani_backend/internal/config"
 	"mezzani_backend/internal/database"
 	db "mezzani_backend/internal/database/sqlc"
@@ -58,6 +60,12 @@ func main() {
 	redisClient := database.NewRedisClient(cfg.RedisURL)
 	eventBus := notifications.NewEventBus(redisClient)
 
+	//cache
+	appCache := cache.NewCache(redisClient)
+
+	// ================= LOGGING =================
+	log.Println("Starting Mezzani Backend...")
+
 	// ================= WEBSOCKET HUB =================
 	hub := notifications.NewHub()
 	go hub.Run()
@@ -76,7 +84,7 @@ func main() {
 	go notifications.StartWhatsAppWorker(eventBus, whatsapp)
 	go notifications.StartKitchenWorker(eventBus, hub)
 	go workers.StartSessionExpiryWorker(queries)
-	//go workers.StartInventoryWorker(queries) // optional but good
+	//go workers.StartInventoryWorker(queries) // Optional: Start inventory worker for periodic stock checks
 
 	// ================= BUSINESS SERVICES =================
 	tableSessionService := service.NewTableSessionService(queries)
@@ -97,11 +105,23 @@ func main() {
 		activityService,
 	)
 
-	authService := service.NewAuthService(queries, []byte(cfg.JWTSecret))
-	menuService := service.NewMenuService(queries)
+	authService := service.NewAuthService(queries, []byte(cfg.JWTSecret), redisClient)
+	menuService := service.NewMenuService(queries, appCache)
 
 	branchService := service.NewBranchService(queries)
 	tableService := service.NewTableService(queries)
+
+	// ================= EMAIL =================
+	emailSender := notifications.NewEmailSender(cfg.ResendAPIKey, cfg.ResendFromEmail)
+
+	// ================= PASSWORD RESET =================
+	passwordResetService := service.NewPasswordResetService(queries, redisClient, emailSender, cfg.FrontendURL)
+
+	//alert service (for logging panics and critical errors to Telegram)
+
+	alertService := notifications.NewAlertService(cfg.TelegramBotToken, cfg.TelegramChatID)
+
+	go alertService.Info("Mezzani Started", fmt.Sprintf("Server running on port %s", cfg.Port))
 
 	// ================= HANDLERS =================
 	tableSessionHandler := handler.NewTableSessionHandler(tableSessionService)
@@ -117,11 +137,17 @@ func main() {
 	branchHandler := handler.NewBranchHandler(branchService)
 	tableHandler := handler.NewTableHandler(tableService)
 	inventoryHandler := handler.NewInventoryHandler(inventoryService)
+	passwordResetHandler := handler.NewPasswordResetHandler(passwordResetService)
 
 	// ================= ROUTER =================
 	r := router.SetupRouter(
 		dbpool,
 		[]byte(cfg.JWTSecret),
+		cfg.AllowedOrigins,
+		branchService,
+		alertService, // Pass alert service to router for panic recovery
+
+		// Handlers
 		authHandler,
 		tableSessionHandler,
 		customerHandler,
@@ -135,6 +161,7 @@ func main() {
 		tableHandler,
 		branchHandler,
 		inventoryHandler,
+		passwordResetHandler,
 	)
 
 	// ================= SERVER =================

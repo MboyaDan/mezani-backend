@@ -12,3 +12,8 @@ RETURNING *;
 SELECT *
 FROM branches
 WHERE tenant_id = $1;
+
+-- name: GetBranchByID :one
+SELECT id, tenant_id, name, location, created_at
+FROM branches
+WHERE id = $1;
