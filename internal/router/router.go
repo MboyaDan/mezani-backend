@@ -71,7 +71,7 @@ func SetupRouter(
 			middleware.StrictRateLimit(),
 			passwordResetHandler.ResetPassword,
 		)
-       // Token refresh and logout
+		// Token refresh and logout
 		public.POST("/auth/refresh", authHandler.RefreshToken)
 		public.POST("/auth/logout", authHandler.Logout)
 		// Auth routes (registration/login)
@@ -152,7 +152,7 @@ func SetupRouter(
 
 		inventory.Use(middleware.RequirePermission("manage_inventory"))
 
-		inventory.Use(middleware.TenantBranchGuard(func(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
+		inventory.Use(middleware.TenantBranchGuard("branch_id", func(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
 
 			branch, err := branchService.GetBranchByID(ctx, id)
 
@@ -202,7 +202,7 @@ func SetupRouter(
 
 			owner.POST("/branches/:id/tables",
 
-				middleware.TenantBranchGuard(func(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
+				middleware.TenantBranchGuard("id", func(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
 
 					branch, err := branchService.GetBranchByID(ctx, id)
 

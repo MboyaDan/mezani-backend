@@ -3,12 +3,15 @@ package service
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
 
 	db "mezzani_backend/internal/database/sqlc"
+
+	"mezzani_backend/internal/auth"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
@@ -36,8 +39,8 @@ func NewAuthService(q *db.Queries, key []byte, redisClient *redis.Client) *AuthS
 	}
 }
 
-// uuidToPgtype converts a uuid.UUID to pgtype.UUID
-// Pass uuid.Nil to get a null pgtype.UUID
+// uuidToPgtype converts a uuid.UUID to pgtype.UUID.
+// Pass uuid.Nil to get a null pgtype.UUID.
 func uuidToPgtype(id uuid.UUID) pgtype.UUID {
 	if id == uuid.Nil {
 		return pgtype.UUID{Valid: false}
@@ -92,22 +95,27 @@ func (s *AuthService) Login(
 		return TokenPair{}, errors.New("invalid credentials")
 	}
 
-	// Generate token pair instead of just access token
 	return s.GenerateTokenPair(ctx, user)
 }
 
 func (s *AuthService) generateAccessToken(user db.StaffUser) (string, error) {
-	var branchID uuid.UUID
+	var branchID string
 	if user.BranchID.Valid {
-		branchID = user.BranchID.Bytes
+		branchID = uuid.UUID(user.BranchID.Bytes).String()
 	}
 
-	claims := jwt.MapClaims{
-		"user_id":   user.ID,
-		"tenant_id": user.TenantID,
-		"branch_id": branchID,
-		"role":      user.Role,
-		"exp":       time.Now().Add(15 * time.Minute).Unix(), // 15 mins
+	claims := auth.Claims{
+		UserID:   user.ID.String(),
+		TenantID: user.TenantID.String(),
+		BranchID: branchID,
+		Role:     user.Role,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   user.ID.String(),
+			ID:        uuid.NewString(), // enables per-token revocation and audit
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(15 * time.Minute)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			Issuer:    "mezzani-api",
+		},
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -115,15 +123,16 @@ func (s *AuthService) generateAccessToken(user db.StaffUser) (string, error) {
 }
 
 func (s *AuthService) generateRefreshToken(ctx context.Context, userID uuid.UUID) (string, error) {
-	// Generate secure random token
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}
+
 	token := hex.EncodeToString(b)
 
-	// Store in Redis — 7 days
-	key := fmt.Sprintf("refresh_token:%s", token)
+	hash := sha256.Sum256([]byte(token))
+	key := fmt.Sprintf("refresh_token:%x", hash)
+
 	if err := s.Redis.Set(ctx, key, userID.String(), 7*24*time.Hour).Err(); err != nil {
 		return "", err
 	}
@@ -149,9 +158,9 @@ func (s *AuthService) GenerateTokenPair(ctx context.Context, user db.StaffUser) 
 }
 
 func (s *AuthService) RefreshAccessToken(ctx context.Context, refreshToken string) (TokenPair, error) {
-	key := fmt.Sprintf("refresh_token:%s", refreshToken)
+	hash := sha256.Sum256([]byte(refreshToken))
+	key := fmt.Sprintf("refresh_token:%x", hash)
 
-	// Get user ID from Redis
 	userIDStr, err := s.Redis.Get(ctx, key).Result()
 	if err == redis.Nil {
 		return TokenPair{}, errors.New("invalid or expired refresh token")
@@ -165,21 +174,21 @@ func (s *AuthService) RefreshAccessToken(ctx context.Context, refreshToken strin
 		return TokenPair{}, errors.New("invalid user id in token")
 	}
 
-	// Get user from DB
 	user, err := s.Queries.GetStaffByID(ctx, userID)
 	if err != nil {
 		return TokenPair{}, errors.New("user not found")
 	}
 
-	// Delete old refresh token
-	s.Redis.Del(ctx, key)
+	if err := s.Redis.Del(ctx, key).Err(); err != nil {
+		return TokenPair{}, err
+	}
 
-	// Generate new token pair
 	return s.GenerateTokenPair(ctx, user)
 }
 
 func (s *AuthService) RevokeRefreshToken(ctx context.Context, refreshToken string) error {
-	key := fmt.Sprintf("refresh_token:%s", refreshToken)
+	hash := sha256.Sum256([]byte(refreshToken))
+	key := fmt.Sprintf("refresh_token:%x", hash)
 	return s.Redis.Del(ctx, key).Err()
 }
 
@@ -190,7 +199,6 @@ func (s *AuthService) RegisterOwner(
 	password string,
 ) (TokenPair, error) {
 
-	// 1. Create tenant
 	tenant, err := s.Queries.CreateTenant(ctx, db.CreateTenantParams{
 		ID:   uuid.New(),
 		Name: restaurantName,
@@ -200,12 +208,11 @@ func (s *AuthService) RegisterOwner(
 		return TokenPair{}, err
 	}
 
-	// 2. Create owner — no branch, created themselves
 	_, err = s.RegisterStaff(
 		ctx,
 		tenant.ID,
-		uuid.Nil, // no branch for owner
-		uuid.Nil, // owner created themselves
+		uuid.Nil,
+		uuid.Nil,
 		"Owner",
 		email,
 		password,
@@ -216,12 +223,4 @@ func (s *AuthService) RegisterOwner(
 	}
 
 	return s.Login(ctx, email, password)
-}
-
-func hashPassword(password string) (string, error) {
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), 12)
-	if err != nil {
-		return "", err
-	}
-	return string(hash), nil
 }
