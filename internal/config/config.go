@@ -2,6 +2,7 @@ package config
 
 import (
 	"log"
+	"strings"
 
 	"github.com/spf13/viper"
 )
@@ -41,7 +42,7 @@ func LoadConfig() *Config {
 		JWTSecret:       viper.GetString("JWT_SECRET"),
 		WhatsappToken:   viper.GetString("WHATSAPP_TOKEN"),
 		WhatsappPhoneID: viper.GetString("WHATSAPP_PHONE_ID"),
-		AllowedOrigins:  viper.GetStringSlice("ALLOWED_ORIGINS"),
+		AllowedOrigins:  strings.Split(viper.GetString("ALLOWED_ORIGINS"), ","),
 		ResendAPIKey:    viper.GetString("RESEND_API_KEY"),
 		ResendFromEmail: viper.GetString("RESEND_FROM_EMAIL"),
 		FrontendURL:     viper.GetString("FRONTEND_URL"),

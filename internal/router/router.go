@@ -71,7 +71,7 @@ func SetupRouter(
 			middleware.StrictRateLimit(),
 			passwordResetHandler.ResetPassword,
 		)
-
+       // Token refresh and logout
 		public.POST("/auth/refresh", authHandler.RefreshToken)
 		public.POST("/auth/logout", authHandler.Logout)
 		// Auth routes (registration/login)
