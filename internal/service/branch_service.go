@@ -34,3 +34,6 @@ func (s *BranchService) CreateBranch(
 func (s *BranchService) GetBranchByID(ctx context.Context, branchID uuid.UUID) (db.Branch, error) {
 	return s.Queries.GetBranchByID(ctx, branchID)
 }
+func (s *BranchService) GetBranchesByTenant(ctx context.Context, tenantID uuid.UUID) ([]db.Branch, error) {
+	return s.Queries.GetBranchesByTenant(ctx, tenantID)
+}

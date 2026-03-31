@@ -49,3 +49,18 @@ func (h *BranchHandler) CreateBranch(c *gin.Context) {
 
 	c.JSON(201, branch)
 }
+
+func (h *BranchHandler) ListBranches(c *gin.Context) {
+	tenantIDStr, _ := c.Get("tenant_id")
+	tenantID, err := uuid.Parse(tenantIDStr.(string))
+	if err != nil {
+		c.JSON(400, gin.H{"error": "invalid tenant_id"})
+		return
+	}
+	branches, err := h.Service.GetBranchesByTenant(c.Request.Context(), tenantID)
+	if err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(200, branches)
+}

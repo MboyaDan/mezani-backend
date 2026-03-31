@@ -11,3 +11,6 @@ RETURNING *;
 SELECT *
 FROM tables
 WHERE branch_id = $1;
+
+-- name: GetTable :one
+SELECT * FROM tables WHERE id = $1;

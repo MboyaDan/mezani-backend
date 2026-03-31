@@ -173,3 +173,20 @@ func (s *MenuService) SetDailySpecial(ctx context.Context, id uuid.UUID, isSpeci
 	s.Cache.DeleteByPattern(ctx, "menu:*")
 	return nil
 }
+
+func (s *MenuService) GetMenuBySession(ctx context.Context, sessionID uuid.UUID) ([]db.GetFullMenuRow, error) {
+	// Get table session → table → branch → menu
+	session, err := s.Queries.GetTableSession(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	table, err := s.Queries.GetTable(ctx, session.TableID)
+	if err != nil {
+		return nil, err
+	}
+	menus, err := s.Queries.GetBranchMenus(ctx, table.BranchID)
+	if err != nil || len(menus) == 0 {
+		return nil, errors.New("no menu found")
+	}
+	return s.Queries.GetFullMenu(ctx, menus[0].ID)
+}

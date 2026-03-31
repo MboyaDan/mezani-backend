@@ -34,6 +34,17 @@ func (q *Queries) CreateTable(ctx context.Context, arg CreateTableParams) (Table
 	return i, err
 }
 
+const getTable = `-- name: GetTable :one
+SELECT id, branch_id, table_number FROM tables WHERE id = $1
+`
+
+func (q *Queries) GetTable(ctx context.Context, id uuid.UUID) (Table, error) {
+	row := q.db.QueryRow(ctx, getTable, id)
+	var i Table
+	err := row.Scan(&i.ID, &i.BranchID, &i.TableNumber)
+	return i, err
+}
+
 const getTablesByBranch = `-- name: GetTablesByBranch :many
 SELECT id, branch_id, table_number
 FROM tables
