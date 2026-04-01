@@ -2,8 +2,19 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"log"
+	"log/slog"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/golang-migrate/migrate/v4"
+	_ "github.com/golang-migrate/migrate/v4/database/postgres"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"mezzani_backend/internal/cache"
 	"mezzani_backend/internal/config"
@@ -14,28 +25,20 @@ import (
 	"mezzani_backend/internal/router"
 	"mezzani_backend/internal/service"
 	"mezzani_backend/internal/workers"
-
-	"github.com/golang-migrate/migrate/v4"
-	_ "github.com/golang-migrate/migrate/v4/database/postgres"
-	_ "github.com/golang-migrate/migrate/v4/source/file"
-
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func runMigrations(databaseURL string) {
-	m, err := migrate.New(
-		"file://migrations",
-		databaseURL,
-	)
+func runMigrations(databaseURL string, logger *slog.Logger) error {
+	m, err := migrate.New("file://migrations", databaseURL)
 	if err != nil {
-		log.Fatal("Migration init error:", err)
+		return fmt.Errorf("migration init: %w", err)
 	}
 
-	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		log.Fatal("Migration failed:", err)
+	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+		return fmt.Errorf("migration failed: %w", err)
 	}
 
-	log.Println("Migrations applied successfully")
+	logger.Info("migrations applied successfully")
+	return nil
 }
 
 func main() {
@@ -44,13 +47,26 @@ func main() {
 	// ================= CONFIG =================
 	cfg := config.LoadConfig()
 
+	// ================= LOGGING =================
+	// Constructed first so every service and subsystem gets the same logger.
+	// JSON format is required for production log aggregators (Datadog, Loki, etc).
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	}))
+
+	logger.Info("starting Mezzani Backend")
+
 	// ================= MIGRATIONS =================
-	runMigrations(cfg.DatabaseURL)
+	if err := runMigrations(cfg.DatabaseURL, logger); err != nil {
+		logger.Error("migrations failed", "error", err)
+		os.Exit(1)
+	}
 
 	// ================= DATABASE =================
 	dbpool, err := pgxpool.New(ctx, cfg.DatabaseURL)
 	if err != nil {
-		log.Fatal("Failed to connect to DB:", err)
+		logger.Error("failed to connect to database", "error", err)
+		os.Exit(1)
 	}
 	defer dbpool.Close()
 
@@ -60,11 +76,8 @@ func main() {
 	redisClient := database.NewRedisClient(cfg.RedisURL)
 	eventBus := notifications.NewEventBus(redisClient)
 
-	//cache
+	// ================= CACHE =================
 	appCache := cache.NewCache(redisClient)
-
-	// ================= LOGGING =================
-	log.Println("Starting Mezzani Backend...")
 
 	// ================= WEBSOCKET HUB =================
 	hub := notifications.NewHub()
@@ -76,21 +89,29 @@ func main() {
 		cfg.WhatsappPhoneID,
 	)
 
-	// ================= CORE SERVICES (SINGLE INSTANCES) =================
-	activityService := service.NewActivityService(queries)
-	inventoryService := service.NewInventoryService(queries)
+	emailSender := notifications.NewEmailSender(cfg.ResendAPIKey, cfg.ResendFromEmail)
+
+	alertService := notifications.NewAlertService(cfg.TelegramBotToken, cfg.TelegramChatID)
 
 	// ================= WORKERS =================
 	go notifications.StartWhatsAppWorker(eventBus, whatsapp)
 	go notifications.StartKitchenWorker(eventBus, hub)
 	go workers.StartSessionExpiryWorker(queries)
-	//go workers.StartInventoryWorker(queries) // Optional: Start inventory worker for periodic stock checks
+
+	// ================= CORE SERVICES =================
+	activityService := service.NewActivityService(queries)
+	inventoryService := service.NewInventoryService(queries)
 
 	// ================= BUSINESS SERVICES =================
+	authService := service.NewAuthService(queries, []byte(cfg.JWTSecret), redisClient, logger)
+	menuService := service.NewMenuService(queries, appCache)
+	branchService := service.NewBranchService(queries)
+	tableService := service.NewTableService(queries)
 	tableSessionService := service.NewTableSessionService(queries)
 	customerService := service.NewCustomerSessionService(queries)
 	cartService := service.NewSharedCartService(queries)
 	analyticsService := service.NewAnalyticsService(queries)
+	passwordResetService := service.NewPasswordResetService(queries, redisClient, emailSender, cfg.FrontendURL)
 
 	orderService := service.NewOrderService(
 		queries,
@@ -105,49 +126,29 @@ func main() {
 		activityService,
 	)
 
-	authService := service.NewAuthService(queries, []byte(cfg.JWTSecret), redisClient)
-	menuService := service.NewMenuService(queries, appCache)
-
-	branchService := service.NewBranchService(queries)
-	tableService := service.NewTableService(queries)
-
-	// ================= EMAIL =================
-	emailSender := notifications.NewEmailSender(cfg.ResendAPIKey, cfg.ResendFromEmail)
-
-	// ================= PASSWORD RESET =================
-	passwordResetService := service.NewPasswordResetService(queries, redisClient, emailSender, cfg.FrontendURL)
-
-	//alert service (for logging panics and critical errors to Telegram)
-
-	alertService := notifications.NewAlertService(cfg.TelegramBotToken, cfg.TelegramChatID)
-
-	go alertService.Info("Mezzani Started", fmt.Sprintf("Server running on port %s", cfg.Port))
-
 	// ================= HANDLERS =================
+	authHandler := handler.NewAuthHandler(authService)
+	menuHandler := handler.NewMenuHandler(menuService)
+	branchHandler := handler.NewBranchHandler(branchService)
+	tableHandler := handler.NewTableHandler(tableService)
 	tableSessionHandler := handler.NewTableSessionHandler(tableSessionService)
 	customerHandler := handler.NewCustomerSessionHandler(customerService)
 	cartHandler := handler.NewSharedCartHandler(cartService)
-	orderHandler := handler.NewOrderHandler(orderService)
-	wsHandler := handler.NewWSHandler(hub)
-	authHandler := handler.NewAuthHandler(authService)
-	billingHandler := handler.NewBillingHandler(billingService)
-	menuHandler := handler.NewMenuHandler(menuService)
 	analyticsHandler := handler.NewAnalyticsHandler(analyticsService)
+	orderHandler := handler.NewOrderHandler(orderService)
+	billingHandler := handler.NewBillingHandler(billingService)
 	staffHandler := handler.NewStaffHandler(authService)
-	branchHandler := handler.NewBranchHandler(branchService)
-	tableHandler := handler.NewTableHandler(tableService)
 	inventoryHandler := handler.NewInventoryHandler(inventoryService)
+	wsHandler := handler.NewWSHandler(hub)
 	passwordResetHandler := handler.NewPasswordResetHandler(passwordResetService)
 
 	// ================= ROUTER =================
 	r := router.SetupRouter(
-		dbpool,
 		[]byte(cfg.JWTSecret),
 		cfg.AllowedOrigins,
 		branchService,
-		alertService, // Pass alert service to router for panic recovery
+		alertService,
 
-		// Handlers
 		authHandler,
 		tableSessionHandler,
 		customerHandler,
@@ -165,9 +166,40 @@ func main() {
 	)
 
 	// ================= SERVER =================
-	log.Println("Server starting on port:", cfg.Port)
-
-	if err := r.Run(":" + cfg.Port); err != nil {
-		log.Fatal("Server failed:", err)
+	srv := &http.Server{
+		Addr:    ":" + cfg.Port,
+		Handler: r,
 	}
+
+	// Start server in a goroutine so it doesn't block signal handling below.
+	go func() {
+		logger.Info("server listening", "port", cfg.Port)
+
+		// Fire the Telegram alert only after the server has actually started.
+		go alertService.Info("Mezzani Started", fmt.Sprintf("Server running on port %s", cfg.Port))
+
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			logger.Error("server failed", "error", err)
+			os.Exit(1)
+		}
+	}()
+
+	// ================= GRACEFUL SHUTDOWN =================
+	// Block until we receive SIGINT or SIGTERM (container stop, deploy, Ctrl+C).
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	logger.Info("shutdown signal received, draining connections...")
+
+	// Give in-flight requests up to 10 seconds to complete before forcing exit.
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		logger.Error("forced shutdown", "error", err)
+		os.Exit(1)
+	}
+
+	logger.Info("server stopped cleanly")
 }

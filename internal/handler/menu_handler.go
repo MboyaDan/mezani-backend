@@ -48,13 +48,13 @@ type UpdatePriceRequest struct {
 //
 
 type MenuItemResponse struct {
-	ID          uuid.UUID `json:"id"`
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	Price       float64   `json:"price"`
-	Available   bool      `json:"available"`
-	SoldOut     bool      `json:"sold_out"`
-	IsSpecial   bool      `json:"is_special"`
+	ID          uuid.UUID `json:"ID"`
+	Name        string    `json:"Name"`
+	Description string    `json:"Description"`
+	Price       float64   `json:"Price"`
+	Available   bool      `json:"Available"`
+	SoldOut     bool      `json:"SoldOut"`
+	IsSpecial   bool      `json:"IsSpecial"`
 }
 
 type CategoryResponse struct {
@@ -399,4 +399,37 @@ func (h *MenuHandler) SetDailySpecial(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "daily special updated"})
+}
+
+func (h *MenuHandler) GetMenuBySession(c *gin.Context) {
+	sessionIDStr := c.Param("session_id")
+	sessionID, err := uuid.Parse(sessionIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid session id"})
+		return
+	}
+
+	rows, err := h.Service.GetMenuBySession(c.Request.Context(), sessionID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Same transform as GetFullMenu — deserialize Items []byte → []MenuItemResponse
+	response := make([]CategoryResponse, 0, len(rows))
+	for _, row := range rows {
+		var items []MenuItemResponse
+		if err := json.Unmarshal(row.Items, &items); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse menu items"})
+			return
+		}
+		response = append(response, CategoryResponse{
+			CategoryID:   row.CategoryID,
+			CategoryName: row.CategoryName,
+			DisplayOrder: row.DisplayOrder,
+			Items:        items,
+		})
+	}
+
+	c.JSON(http.StatusOK, response)
 }
