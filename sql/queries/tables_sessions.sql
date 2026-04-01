@@ -40,3 +40,16 @@ UPDATE table_sessions
 SET expires_at = NOW() + INTERVAL '30 minutes'
 WHERE id = $1
 AND status = 'active';
+
+-- name: GetTableSessionWithTable :one
+SELECT 
+    ts.id,
+    ts.table_id,
+    ts.status,
+    ts.expires_at,
+    ts.created_at,
+    t.branch_id,
+    t.table_number  
+FROM table_sessions ts
+JOIN tables t ON t.id = ts.table_id
+WHERE ts.id = $1;

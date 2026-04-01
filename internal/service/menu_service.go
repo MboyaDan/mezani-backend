@@ -175,18 +175,23 @@ func (s *MenuService) SetDailySpecial(ctx context.Context, id uuid.UUID, isSpeci
 }
 
 func (s *MenuService) GetMenuBySession(ctx context.Context, sessionID uuid.UUID) ([]db.GetFullMenuRow, error) {
-	// Get table session → table → branch → menu
-	session, err := s.Queries.GetTableSession(ctx, sessionID)
+
+	sessionWithTable, err := s.Queries.GetTableSessionWithTable(ctx, sessionID)
 	if err != nil {
-		return nil, err
+		return nil, errors.New("session not found")
 	}
-	table, err := s.Queries.GetTable(ctx, session.TableID)
-	if err != nil {
-		return nil, err
+	if sessionWithTable.Status != "active" {
+		return nil, errors.New("table session is not active")
 	}
-	menus, err := s.Queries.GetBranchMenus(ctx, table.BranchID)
+
+	if sessionWithTable.ExpiresAt.Before(time.Now()) {
+		return nil, errors.New("table session has expired")
+	}
+
+	menus, err := s.Queries.GetBranchMenus(ctx, sessionWithTable.BranchID)
 	if err != nil || len(menus) == 0 {
-		return nil, errors.New("no menu found")
+		return nil, errors.New("no menu found for this branch")
 	}
-	return s.Queries.GetFullMenu(ctx, menus[0].ID)
+
+	return s.GetFullMenu(ctx, menus[0].ID)
 }

@@ -137,3 +137,42 @@ func (q *Queries) GetTableSession(ctx context.Context, id uuid.UUID) (TableSessi
 	)
 	return i, err
 }
+
+const getTableSessionWithTable = `-- name: GetTableSessionWithTable :one
+SELECT 
+    ts.id,
+    ts.table_id,
+    ts.status,
+    ts.expires_at,
+    ts.created_at,
+    t.branch_id,
+    t.table_number  
+FROM table_sessions ts
+JOIN tables t ON t.id = ts.table_id
+WHERE ts.id = $1
+`
+
+type GetTableSessionWithTableRow struct {
+	ID          uuid.UUID
+	TableID     uuid.UUID
+	Status      string
+	ExpiresAt   time.Time
+	CreatedAt   time.Time
+	BranchID    uuid.UUID
+	TableNumber int32
+}
+
+func (q *Queries) GetTableSessionWithTable(ctx context.Context, id uuid.UUID) (GetTableSessionWithTableRow, error) {
+	row := q.db.QueryRow(ctx, getTableSessionWithTable, id)
+	var i GetTableSessionWithTableRow
+	err := row.Scan(
+		&i.ID,
+		&i.TableID,
+		&i.Status,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+		&i.BranchID,
+		&i.TableNumber,
+	)
+	return i, err
+}

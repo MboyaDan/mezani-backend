@@ -2,7 +2,9 @@ package handler
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -23,7 +25,7 @@ func NewMenuHandler(s *service.MenuService) *MenuHandler {
 //
 
 type CreateMenuRequest struct {
-	BranchID string `json:"branch_id" binding:"required"` // Changed from RestaurantID
+	BranchID string `json:"branch_id" binding:"required"`
 }
 
 type CreateCategoryRequest struct {
@@ -33,7 +35,7 @@ type CreateCategoryRequest struct {
 }
 
 type CreateMenuItemRequest struct {
-	CategoryID  string  `json:"category_id" binding:"required"` // Changed from MenuID
+	CategoryID  string  `json:"category_id" binding:"required"`
 	Name        string  `json:"name" binding:"required"`
 	Description string  `json:"description"`
 	Price       float64 `json:"price" binding:"required"`
@@ -48,15 +50,16 @@ type UpdatePriceRequest struct {
 //
 
 type MenuItemResponse struct {
-	ID          uuid.UUID `json:"ID"`
-	Name        string    `json:"Name"`
-	Description string    `json:"Description"`
-	Price       float64   `json:"Price"`
-	Available   bool      `json:"Available"`
-	SoldOut     bool      `json:"SoldOut"`
-	IsSpecial   bool      `json:"IsSpecial"`
+	ID          uuid.UUID `json:"id"`
+	CategoryID  uuid.UUID `json:"category_id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	Price       float64   `json:"price"`
+	Available   bool      `json:"available"`
+	SoldOut     bool      `json:"sold_out"`
+	IsSpecial   bool      `json:"is_special"`
+	CreatedAt   time.Time `json:"created_at"`
 }
-
 type CategoryResponse struct {
 	CategoryID   uuid.UUID          `json:"category_id"`
 	CategoryName string             `json:"category_name"`
@@ -403,26 +406,43 @@ func (h *MenuHandler) SetDailySpecial(c *gin.Context) {
 
 func (h *MenuHandler) GetMenuBySession(c *gin.Context) {
 	sessionIDStr := c.Param("session_id")
+
 	sessionID, err := uuid.Parse(sessionIDStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid session id"})
 		return
 	}
 
+	log.Printf("Fetching menu for session: %s", sessionID)
+
 	rows, err := h.Service.GetMenuBySession(c.Request.Context(), sessionID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		switch err.Error() {
+		case "session not found":
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		case "table session is not active", "table session has expired":
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch menu"})
+		}
 		return
 	}
 
-	// Same transform as GetFullMenu — deserialize Items []byte → []MenuItemResponse
+	if len(rows) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "no menu available for this session"})
+		return
+	}
+
 	response := make([]CategoryResponse, 0, len(rows))
+
 	for _, row := range rows {
 		var items []MenuItemResponse
+
 		if err := json.Unmarshal(row.Items, &items); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse menu items"})
 			return
 		}
+
 		response = append(response, CategoryResponse{
 			CategoryID:   row.CategoryID,
 			CategoryName: row.CategoryName,

@@ -84,6 +84,7 @@ func SetupRouter(
 		public.GET("/menus/branch/:branch_id", middleware.RelaxedRateLimit(), menuHandler.GetBranchMenus)
 		public.GET("/menus/:menu_id/categories", middleware.RelaxedRateLimit(), menuHandler.GetMenuCategories)
 		public.GET("/categories/:category_id/items", middleware.RelaxedRateLimit(), menuHandler.GetCategoryItems)
+		public.GET("/table-sessions/:session_id/menu", middleware.RelaxedRateLimit(), menuHandler.GetMenuBySession)
 
 		// ----- Customer Flow (QR scan — no JWT) -----
 		// These are intentionally public. Customers join via QR code links.
