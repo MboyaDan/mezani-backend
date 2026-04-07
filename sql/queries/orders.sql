@@ -47,3 +47,30 @@ UPDATE orders
 SET status = 'closed'
 WHERE id = $1
 RETURNING *;
+
+-- name: GetRecentOrdersByBranch :many
+SELECT 
+    o.id,
+    o.table_session_id,
+    o.customer_session_id,
+    o.cart_id,
+    o.status,
+    o.created_at,
+    t.table_number
+FROM orders o
+JOIN table_sessions ts ON ts.id = o.table_session_id
+JOIN tables t ON t.id = ts.table_id
+WHERE t.branch_id = $1
+ORDER BY o.created_at DESC
+LIMIT 50;
+
+-- name: GetOrderItemsByOrder :many
+SELECT 
+    oi.id,
+    oi.order_id,
+    oi.quantity,
+    mi.name,
+    mi.price
+FROM order_items oi
+JOIN menu_items mi ON mi.id = oi.menu_item_id
+WHERE oi.order_id = $1;

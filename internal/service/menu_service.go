@@ -195,3 +195,24 @@ func (s *MenuService) GetMenuBySession(ctx context.Context, sessionID uuid.UUID)
 
 	return s.GetFullMenu(ctx, menus[0].ID)
 }
+
+type SessionInfo struct {
+	TableNumber int32  `json:"table_number"`
+	BranchID    string `json:"branch_id"`
+	Status      string `json:"status"`
+}
+
+func (s *MenuService) GetSessionInfo(ctx context.Context, sessionID uuid.UUID) (SessionInfo, error) {
+	row, err := s.Queries.GetTableSessionWithTable(ctx, sessionID)
+	if err != nil {
+		return SessionInfo{}, errors.New("session not found")
+	}
+	if row.Status != "active" {
+		return SessionInfo{}, errors.New("session is not active")
+	}
+	return SessionInfo{
+		TableNumber: row.TableNumber,
+		BranchID:    row.BranchID.String(),
+		Status:      row.Status,
+	}, nil
+}

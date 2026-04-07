@@ -56,7 +56,12 @@ func SetupRouter(
 		MaxAge:           12 * time.Hour,
 	}))
 
+	// ----- WebSocket -----
+	// Registered in the public group so CORS middleware applies.
+	// The handler performs its own connection-level auth.
+	r.GET("/ws/kitchen", wsHandler.HandleWS)
 	// ========== PUBLIC ROUTES (No Auth Required) ==========
+
 	public := r.Group("/api")
 	{
 		// ----- Auth -----
@@ -85,6 +90,7 @@ func SetupRouter(
 		public.GET("/menus/:menu_id/categories", middleware.RelaxedRateLimit(), menuHandler.GetMenuCategories)
 		public.GET("/categories/:category_id/items", middleware.RelaxedRateLimit(), menuHandler.GetCategoryItems)
 		public.GET("/table-sessions/:session_id/menu", middleware.RelaxedRateLimit(), menuHandler.GetMenuBySession)
+		public.GET("/table-sessions/:session_id/info", middleware.RelaxedRateLimit(), menuHandler.GetSessionInfo)
 
 		// ----- Customer Flow (QR scan — no JWT) -----
 		// These are intentionally public. Customers join via QR code links.
@@ -96,10 +102,6 @@ func SetupRouter(
 		public.POST("/cart/add-item", middleware.ModerateRateLimit(), cartHandler.AddItem)
 		public.POST("/orders/submit", middleware.ModerateRateLimit(), orderHandler.SubmitCart)
 
-		// ----- WebSocket -----
-		// Registered in the public group so CORS middleware applies.
-		// The handler performs its own connection-level auth.
-		public.GET("/ws/kitchen", wsHandler.HandleWS)
 	}
 
 	// ========== PROTECTED ROUTES (JWT Required) ==========
@@ -123,18 +125,16 @@ func SetupRouter(
 				middleware.RequirePermission("update_order_status"),
 				orderHandler.UpdateStatus,
 			)
+			orders.GET("/recent", orderHandler.GetRecentOrders)
 		}
 
 		// ----- Kitchen Display -----
 		kitchen := protected.Group("/kitchen")
 		kitchen.Use(middleware.RequirePermission("view_kitchen_display"))
 		{
-			// Kitchen staff view orders via this group.
-			// Status updates go through /orders/:id/status above,
-			// which carries the correct permission check.
 
 			//I will replace with a proper ListKitchenOrders handler when available
-			kitchen.GET("/orders", orderHandler.UpdateStatus)
+			kitchen.PATCH("/orders/:id/status", orderHandler.UpdateStatus)
 		}
 
 		// ----- Billing -----

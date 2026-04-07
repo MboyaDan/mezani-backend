@@ -7,6 +7,7 @@ package db
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -125,6 +126,52 @@ func (q *Queries) GetOrderByID(ctx context.Context, id uuid.UUID) (Order, error)
 	return i, err
 }
 
+const getOrderItemsByOrder = `-- name: GetOrderItemsByOrder :many
+SELECT 
+    oi.id,
+    oi.order_id,
+    oi.quantity,
+    mi.name,
+    mi.price
+FROM order_items oi
+JOIN menu_items mi ON mi.id = oi.menu_item_id
+WHERE oi.order_id = $1
+`
+
+type GetOrderItemsByOrderRow struct {
+	ID       uuid.UUID
+	OrderID  uuid.UUID
+	Quantity int32
+	Name     string
+	Price    float64
+}
+
+func (q *Queries) GetOrderItemsByOrder(ctx context.Context, orderID uuid.UUID) ([]GetOrderItemsByOrderRow, error) {
+	rows, err := q.db.Query(ctx, getOrderItemsByOrder, orderID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetOrderItemsByOrderRow
+	for rows.Next() {
+		var i GetOrderItemsByOrderRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrderID,
+			&i.Quantity,
+			&i.Name,
+			&i.Price,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getOrdersByTableSession = `-- name: GetOrdersByTableSession :many
 SELECT id, table_session_id, customer_session_id, cart_id, status, created_at
 FROM orders
@@ -148,6 +195,61 @@ func (q *Queries) GetOrdersByTableSession(ctx context.Context, tableSessionID uu
 			&i.CartID,
 			&i.Status,
 			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getRecentOrdersByBranch = `-- name: GetRecentOrdersByBranch :many
+SELECT 
+    o.id,
+    o.table_session_id,
+    o.customer_session_id,
+    o.cart_id,
+    o.status,
+    o.created_at,
+    t.table_number
+FROM orders o
+JOIN table_sessions ts ON ts.id = o.table_session_id
+JOIN tables t ON t.id = ts.table_id
+WHERE t.branch_id = $1
+ORDER BY o.created_at DESC
+LIMIT 50
+`
+
+type GetRecentOrdersByBranchRow struct {
+	ID                uuid.UUID
+	TableSessionID    uuid.UUID
+	CustomerSessionID uuid.UUID
+	CartID            uuid.UUID
+	Status            string
+	CreatedAt         time.Time
+	TableNumber       int32
+}
+
+func (q *Queries) GetRecentOrdersByBranch(ctx context.Context, branchID uuid.UUID) ([]GetRecentOrdersByBranchRow, error) {
+	rows, err := q.db.Query(ctx, getRecentOrdersByBranch, branchID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetRecentOrdersByBranchRow
+	for rows.Next() {
+		var i GetRecentOrdersByBranchRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TableSessionID,
+			&i.CustomerSessionID,
+			&i.CartID,
+			&i.Status,
+			&i.CreatedAt,
+			&i.TableNumber,
 		); err != nil {
 			return nil, err
 		}

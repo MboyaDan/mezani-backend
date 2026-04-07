@@ -453,3 +453,20 @@ func (h *MenuHandler) GetMenuBySession(c *gin.Context) {
 
 	c.JSON(http.StatusOK, response)
 }
+
+func (h *MenuHandler) GetSessionInfo(c *gin.Context) {
+	sessionIDStr := c.Param("session_id")
+	sessionID, err := uuid.Parse(sessionIDStr)
+	if err != nil {
+		c.JSON(400, gin.H{"error": "invalid session id"})
+		return
+	}
+
+	info, err := h.Service.GetSessionInfo(c.Request.Context(), sessionID)
+	if err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(200, info)
+}

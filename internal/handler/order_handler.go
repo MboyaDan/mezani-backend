@@ -79,7 +79,7 @@ func (h *OrderHandler) SubmitCart(c *gin.Context) {
 		cartID,
 	)
 
-	// 🚀 Call service
+	// Call service
 	order, err := h.Service.SubmitCart(
 		c.Request.Context(),
 		tableSessionID,
@@ -142,4 +142,32 @@ func (h *OrderHandler) UpdateStatus(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"status": "updated"})
+}
+
+func (h *OrderHandler) GetRecentOrders(c *gin.Context) {
+	branchIDStr, exists := c.Get("branch_id")
+	if !exists {
+		c.JSON(400, gin.H{"error": "branch_id missing from token"})
+		return
+	}
+
+	// Owner has no branch_id in token — check query param
+	branchIDRaw := branchIDStr.(string)
+	if branchIDRaw == "00000000-0000-0000-0000-000000000000" || branchIDRaw == "" {
+		branchIDRaw = c.Query("branch_id")
+	}
+
+	branchID, err := uuid.Parse(branchIDRaw)
+	if err != nil {
+		c.JSON(400, gin.H{"error": "invalid branch_id"})
+		return
+	}
+
+	orders, err := h.Service.GetRecentOrders(c.Request.Context(), branchID)
+	if err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(200, orders)
 }

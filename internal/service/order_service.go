@@ -65,14 +65,17 @@ func (s *OrderService) SubmitCart(
 		return db.Order{}, err
 	}
 
+	// Only log activity if a real staff member is in context
 	staffID, branchID := staffFromContext(ctx)
-	s.Activity.Log(ctx, ActivityParams{
-		StaffID:    staffID,
-		BranchID:   branchID,
-		Action:     "order.create",
-		EntityType: "order",
-		EntityID:   order.ID,
-	})
+	if staffID != uuid.Nil {
+		s.Activity.Log(ctx, ActivityParams{
+			StaffID:    staffID,
+			BranchID:   branchID,
+			Action:     "order.create",
+			EntityType: "order",
+			EntityID:   order.ID,
+		})
+	}
 
 	cartItems, err := s.Queries.GetCartItems(ctx, cartID)
 	if err != nil {
@@ -102,20 +105,30 @@ func (s *OrderService) SubmitCart(
 		return db.Order{}, err
 	}
 
-	event := notifications.KDSOrderCreatedEvent{
-		OrderID: order.ID.String(),
-		TableID: tableSessionID.String(),
-		Items:   items,
+	// Fetch table number for kitchen display
+	var tableNumber int32
+	table, err := s.Queries.GetTable(ctx, session.TableID)
+	if err == nil {
+		tableNumber = table.TableNumber
 	}
 
+	event := notifications.KDSOrderCreatedEvent{
+		Type:        "new_order",
+		OrderID:     order.ID.String(),
+		TableID:     tableSessionID.String(),
+		TableNumber: tableNumber,
+		Items:       items,
+	}
+
+	// Log publish errors instead of silently swallowing them
 	if err := s.EventBus.Publish("orders.new", event); err != nil {
-		// log only, don't fail request
+		log.Printf("Warning: failed to publish KDS order.create event: %v", err)
 	}
 
 	return order, nil
 }
 
-// Get Orders
+// Get Orders by Table
 func (s *OrderService) GetOrdersByTable(
 	ctx context.Context,
 	tableSessionID uuid.UUID,
@@ -163,17 +176,19 @@ func (s *OrderService) UpdateStatus(
 		return errors.New("order status changed by another process")
 	}
 
-	// Log activity
+	//  Only log activity if a real staff member is in context
 	staffID, branchID := staffFromContext(ctx)
-	s.Activity.Log(ctx, ActivityParams{
-		StaffID:    staffID,
-		BranchID:   branchID,
-		Action:     "order.status_update",
-		EntityType: "order",
-		EntityID:   updatedOrder.ID,
-		OldData:    map[string]any{"status": string(current)},
-		NewData:    map[string]any{"status": newStatus},
-	})
+	if staffID != uuid.Nil {
+		s.Activity.Log(ctx, ActivityParams{
+			StaffID:    staffID,
+			BranchID:   branchID,
+			Action:     "order.status_update",
+			EntityType: "order",
+			EntityID:   updatedOrder.ID,
+			OldData:    map[string]any{"status": string(current)},
+			NewData:    map[string]any{"status": newStatus},
+		})
+	}
 
 	// Deduct stock when order is confirmed
 	if newStatus == "confirmed" {
@@ -190,14 +205,15 @@ func (s *OrderService) UpdateStatus(
 		}
 	}
 
-	// Publish status update
+	// TO:
 	event := notifications.KDSOrderStatusUpdatedEvent{
+		Type:    "order_updated",
 		OrderID: updatedOrder.ID.String(),
 		Status:  updatedOrder.Status,
 	}
 
 	if err := s.EventBus.Publish("orders.status", event); err != nil {
-		// log only
+		log.Printf("Warning: failed to publish KDS order.status event: %v", err)
 	}
 
 	return nil
@@ -212,4 +228,55 @@ func staffFromContext(ctx context.Context) (staffID uuid.UUID, branchID uuid.UUI
 		branchID, _ = uuid.Parse(id)
 	}
 	return
+}
+
+type OrderWithItems struct {
+    ID          string      `json:"id"`
+    TableNumber int32       `json:"table_number"`
+    Status      string      `json:"status"`
+    CreatedAt   time.Time   `json:"created_at"`
+    Items       []OrderItem `json:"items"`
+    Total       float64     `json:"total"`
+}
+
+type OrderItem struct {
+    Name     string  `json:"name"`
+    Quantity int32   `json:"quantity"`
+    Price    float64 `json:"price"`
+}
+
+func (s *OrderService) GetRecentOrders(ctx context.Context, branchID uuid.UUID) ([]OrderWithItems, error) {
+    orders, err := s.Queries.GetRecentOrdersByBranch(ctx, branchID)
+    if err != nil {
+        return nil, err
+    }
+
+    result := make([]OrderWithItems, 0, len(orders))
+    for _, o := range orders {
+        items, err := s.Queries.GetOrderItemsByOrder(ctx, o.ID)
+        if err != nil {
+            continue
+        }
+
+        var total float64
+        orderItems := make([]OrderItem, 0, len(items))
+        for _, item := range items {
+            orderItems = append(orderItems, OrderItem{
+                Name:     item.Name,
+                Quantity: item.Quantity,
+                Price:    item.Price,
+            })
+            total += item.Price * float64(item.Quantity)
+        }
+
+        result = append(result, OrderWithItems{
+            ID:          o.ID.String(),
+            TableNumber: o.TableNumber,
+            Status:      o.Status,
+            CreatedAt:   o.CreatedAt,
+            Items:       orderItems,
+            Total:       total,
+        })
+    }
+    return result, nil
 }

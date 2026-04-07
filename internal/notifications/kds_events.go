@@ -6,12 +6,16 @@ type Item struct {
 }
 
 type KDSOrderCreatedEvent struct {
-	OrderID string `json:"order_id"`
-	TableID string `json:"table_id"`
-	Items   []Item `json:"items"`
+	Type        string `json:"type"`
+	OrderID     string `json:"order_id"`
+	TableID     string `json:"table_id"`
+	TableNumber int32  `json:"table_number"`
+	Items       []Item `json:"items"`
+	Note        string `json:"note"`
 }
 
 type KDSOrderStatusUpdatedEvent struct {
+	Type    string `json:"type"`
 	OrderID string `json:"order_id"`
 	Status  string `json:"status"`
 }
