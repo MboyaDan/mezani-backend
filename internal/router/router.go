@@ -192,6 +192,8 @@ func SetupRouter(
 		owner := protected.Group("/owner")
 		owner.Use(middleware.RequirePermission("manage_branches"))
 		{
+
+			owner.GET("/tables", tableHandler.GetTablesWithSessions)
 			owner.POST("/branches", branchHandler.CreateBranch)
 			owner.GET("/branches", branchHandler.ListBranches)
 			owner.POST("/branches/:id/tables",

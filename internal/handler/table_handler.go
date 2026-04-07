@@ -46,3 +46,25 @@ func (h *TableHandler) CreateTable(c *gin.Context) {
 
 	c.JSON(201, table)
 }
+
+func (h *TableHandler) GetTablesWithSessions(c *gin.Context) {
+	branchIDRaw := c.Query("branch_id")
+	if branchIDRaw == "" {
+		branchIDVal, _ := c.Get("branch_id")
+		branchIDRaw, _ = branchIDVal.(string)
+	}
+
+	branchID, err := uuid.Parse(branchIDRaw)
+	if err != nil {
+		c.JSON(400, gin.H{"error": "invalid branch_id"})
+		return
+	}
+
+	tables, err := h.Service.GetTablesWithSessions(c.Request.Context(), branchID)
+	if err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(200, tables)
+}
