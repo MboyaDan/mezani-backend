@@ -60,11 +60,26 @@ type MenuItemResponse struct {
 	IsSpecial   bool      `json:"is_special"`
 	CreatedAt   time.Time `json:"created_at"`
 }
+
 type CategoryResponse struct {
 	CategoryID   uuid.UUID          `json:"category_id"`
 	CategoryName string             `json:"category_name"`
 	DisplayOrder int32              `json:"display_order"`
 	Items        []MenuItemResponse `json:"items"`
+}
+
+// parseItems safely unmarshals a JSON blob of items into []MenuItemResponse.
+// It always returns a non-nil slice so the response JSON is always "items": []
+// rather than "items": null when a category has no items yet.
+func parseItems(raw []byte) ([]MenuItemResponse, error) {
+	items := make([]MenuItemResponse, 0)
+	if len(raw) == 0 || string(raw) == "null" {
+		return items, nil
+	}
+	if err := json.Unmarshal(raw, &items); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 //
@@ -85,11 +100,7 @@ func (h *MenuHandler) CreateMenu(c *gin.Context) {
 		return
 	}
 
-	menu, err := h.Service.CreateMenu(
-		c.Request.Context(),
-		branchID,
-	)
-
+	menu, err := h.Service.CreateMenu(c.Request.Context(), branchID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -116,13 +127,7 @@ func (h *MenuHandler) CreateCategory(c *gin.Context) {
 		return
 	}
 
-	category, err := h.Service.CreateCategory(
-		c.Request.Context(),
-		menuID,
-		req.Name,
-		req.Order,
-	)
-
+	category, err := h.Service.CreateCategory(c.Request.Context(), menuID, req.Name, req.Order)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -149,14 +154,7 @@ func (h *MenuHandler) CreateMenuItem(c *gin.Context) {
 		return
 	}
 
-	item, err := h.Service.AddMenuItem(
-		c.Request.Context(),
-		categoryID,
-		req.Name,
-		req.Description,
-		req.Price,
-	)
-
+	item, err := h.Service.AddMenuItem(c.Request.Context(), categoryID, req.Name, req.Description, req.Price)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -178,11 +176,7 @@ func (h *MenuHandler) GetBranchMenus(c *gin.Context) {
 		return
 	}
 
-	menus, err := h.Service.GetBranchMenus(
-		c.Request.Context(),
-		branchID,
-	)
-
+	menus, err := h.Service.GetBranchMenus(c.Request.Context(), branchID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -204,11 +198,7 @@ func (h *MenuHandler) GetMenuCategories(c *gin.Context) {
 		return
 	}
 
-	categories, err := h.Service.GetMenuCategories(
-		c.Request.Context(),
-		menuID,
-	)
-
+	categories, err := h.Service.GetMenuCategories(c.Request.Context(), menuID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -230,11 +220,7 @@ func (h *MenuHandler) GetCategoryItems(c *gin.Context) {
 		return
 	}
 
-	items, err := h.Service.GetCategoryItems(
-		c.Request.Context(),
-		categoryID,
-	)
-
+	items, err := h.Service.GetCategoryItems(c.Request.Context(), categoryID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -262,24 +248,22 @@ func (h *MenuHandler) GetFullMenu(c *gin.Context) {
 		return
 	}
 
-	// Transform into nested JSON response
 	response := make([]CategoryResponse, 0, len(rows))
 
 	for _, row := range rows {
-		var items []MenuItemResponse
-		if err := json.Unmarshal(row.Items, &items); err != nil {
+		items, err := parseItems(row.Items)
+		if err != nil {
+			log.Printf("GetFullMenu: failed to parse items for category %s: %v", row.CategoryID, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse menu items"})
 			return
 		}
 
-		category := CategoryResponse{
+		response = append(response, CategoryResponse{
 			CategoryID:   row.CategoryID,
 			CategoryName: row.CategoryName,
 			DisplayOrder: row.DisplayOrder,
 			Items:        items,
-		}
-
-		response = append(response, category)
+		})
 	}
 
 	c.JSON(http.StatusOK, response)
@@ -304,13 +288,7 @@ func (h *MenuHandler) UpdatePrice(c *gin.Context) {
 		return
 	}
 
-	err = h.Service.UpdateMenuItemPrice(
-		c.Request.Context(),
-		id,
-		req.Price,
-	)
-
-	if err != nil {
+	if err := h.Service.UpdateMenuItemPrice(c.Request.Context(), id, req.Price); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -331,15 +309,7 @@ func (h *MenuHandler) SetItemSoldOut(c *gin.Context) {
 		return
 	}
 
-	// You need to get the current state first or modify service
-	// For now, setting to true
-	err = h.Service.SetMenuItemSoldOut(
-		c.Request.Context(),
-		id,
-		true,
-	)
-
-	if err != nil {
+	if err := h.Service.SetMenuItemSoldOut(c.Request.Context(), id, true); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -360,13 +330,7 @@ func (h *MenuHandler) SetItemAvailable(c *gin.Context) {
 		return
 	}
 
-	err = h.Service.SetMenuItemAvailability(
-		c.Request.Context(),
-		id,
-		true,
-	)
-
-	if err != nil {
+	if err := h.Service.SetMenuItemAvailable(c.Request.Context(), id); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -380,9 +344,7 @@ func (h *MenuHandler) SetItemAvailable(c *gin.Context) {
 
 func (h *MenuHandler) SetDailySpecial(c *gin.Context) {
 	idStr := c.Param("id")
-	isSpecialStr := c.Query("special") // ?special=true
-
-	isSpecial := isSpecialStr == "true"
+	isSpecial := c.Query("special") == "true"
 
 	id, err := uuid.Parse(idStr)
 	if err != nil {
@@ -390,19 +352,17 @@ func (h *MenuHandler) SetDailySpecial(c *gin.Context) {
 		return
 	}
 
-	err = h.Service.SetDailySpecial(
-		c.Request.Context(),
-		id,
-		isSpecial,
-	)
-
-	if err != nil {
+	if err := h.Service.SetDailySpecial(c.Request.Context(), id, isSpecial); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "daily special updated"})
 }
+
+//
+// GET MENU BY SESSION (Customer QR flow)
+//
 
 func (h *MenuHandler) GetMenuBySession(c *gin.Context) {
 	sessionIDStr := c.Param("session_id")
@@ -436,9 +396,9 @@ func (h *MenuHandler) GetMenuBySession(c *gin.Context) {
 	response := make([]CategoryResponse, 0, len(rows))
 
 	for _, row := range rows {
-		var items []MenuItemResponse
-
-		if err := json.Unmarshal(row.Items, &items); err != nil {
+		items, err := parseItems(row.Items)
+		if err != nil {
+			log.Printf("GetMenuBySession: failed to parse items for category %s: %v", row.CategoryID, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse menu items"})
 			return
 		}
@@ -454,19 +414,24 @@ func (h *MenuHandler) GetMenuBySession(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
+//
+// GET SESSION INFO
+//
+
 func (h *MenuHandler) GetSessionInfo(c *gin.Context) {
 	sessionIDStr := c.Param("session_id")
+
 	sessionID, err := uuid.Parse(sessionIDStr)
 	if err != nil {
-		c.JSON(400, gin.H{"error": "invalid session id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid session id"})
 		return
 	}
 
 	info, err := h.Service.GetSessionInfo(c.Request.Context(), sessionID)
 	if err != nil {
-		c.JSON(400, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(200, info)
+	c.JSON(http.StatusOK, info)
 }

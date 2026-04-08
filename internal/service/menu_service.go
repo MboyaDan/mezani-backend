@@ -150,6 +150,7 @@ func (s *MenuService) UpdateMenuItemPrice(ctx context.Context, id uuid.UUID, pri
 	return nil
 }
 
+// SetMenuItemSoldOut → also sets available=false
 func (s *MenuService) SetMenuItemSoldOut(ctx context.Context, id uuid.UUID, soldOut bool) error {
 	if err := s.Queries.SetMenuItemSoldOut(ctx, db.SetMenuItemSoldOutParams{ID: id, SoldOut: soldOut}); err != nil {
 		return err
@@ -158,8 +159,9 @@ func (s *MenuService) SetMenuItemSoldOut(ctx context.Context, id uuid.UUID, sold
 	return nil
 }
 
-func (s *MenuService) SetMenuItemAvailability(ctx context.Context, id uuid.UUID, available bool) error {
-	if err := s.Queries.SetMenuItemAvailability(ctx, db.SetMenuItemAvailabilityParams{ID: id, Available: available}); err != nil {
+// SetMenuItemAvailable is a convenience wrapper to set available=true and sold_out=false together
+func (s *MenuService) SetMenuItemAvailable(ctx context.Context, id uuid.UUID) error {
+	if err := s.Queries.SetMenuItemAvailable(ctx, id); err != nil {
 		return err
 	}
 	s.Cache.DeleteByPattern(ctx, "menu:*")

@@ -108,25 +108,25 @@ func (q *Queries) SetDailySpecial(ctx context.Context, arg SetDailySpecialParams
 	return err
 }
 
-const setMenuItemAvailability = `-- name: SetMenuItemAvailability :exec
-UPDATE menu_items
-SET available = $2
+const setMenuItemAvailable = `-- name: SetMenuItemAvailable :exec
+UPDATE menu_items 
+SET sold_out = false, available = true 
 WHERE id = $1
 `
 
-type SetMenuItemAvailabilityParams struct {
-	ID        uuid.UUID
-	Available bool
-}
-
-func (q *Queries) SetMenuItemAvailability(ctx context.Context, arg SetMenuItemAvailabilityParams) error {
-	_, err := q.db.Exec(ctx, setMenuItemAvailability, arg.ID, arg.Available)
+func (q *Queries) SetMenuItemAvailable(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, setMenuItemAvailable, id)
 	return err
 }
 
 const setMenuItemSoldOut = `-- name: SetMenuItemSoldOut :exec
 UPDATE menu_items
-SET sold_out = $2
+SET 
+    sold_out = $2,
+    available = CASE 
+        WHEN $2 = true THEN false
+        ELSE available
+    END
 WHERE id = $1
 `
 

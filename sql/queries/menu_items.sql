@@ -21,14 +21,21 @@ UPDATE menu_items
 SET price = $2
 WHERE id = $1;
 
--- name: SetMenuItemAvailability :exec
-UPDATE menu_items
-SET available = $2
-WHERE id = $1;
+
 
 -- name: SetMenuItemSoldOut :exec
 UPDATE menu_items
-SET sold_out = $2
+SET 
+    sold_out = $2,
+    available = CASE 
+        WHEN $2 = true THEN false
+        ELSE available
+    END
+WHERE id = $1;
+
+-- name: SetMenuItemAvailable :exec
+UPDATE menu_items 
+SET sold_out = false, available = true 
 WHERE id = $1;
 
 -- name: SetDailySpecial :exec
