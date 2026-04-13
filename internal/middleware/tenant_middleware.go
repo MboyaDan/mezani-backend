@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -53,6 +54,9 @@ func TenantBranchGuard(
 			c.AbortWithStatusJSON(http.StatusNotFound, gin.H{"error": "branch not found"})
 			return
 		}
+		// DEBUG
+		log.Printf("TenantGuard | branchTenantID=%s | jwtTenantID=%s | match=%v",
+			branchTenantID, tenantID, branchTenantID == tenantID)
 
 		if branchTenantID != tenantID {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "access denied"})

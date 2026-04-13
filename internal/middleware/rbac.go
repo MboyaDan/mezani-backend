@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"log"
 	"net/http"
 
 	"mezzani_backend/internal/domain"
@@ -13,6 +14,10 @@ func RequirePermission(permission string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 
 		roleValue, exists := c.Get("role")
+
+		// DEBUG
+		log.Printf("RequirePermission | permission=%s | exists=%v | roleValue=%v | type=%T",
+			permission, exists, roleValue, roleValue)
 
 		if !exists {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{

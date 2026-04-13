@@ -1,8 +1,13 @@
 package domain
 
+import "log"
+
 func HasPermission(role Role, permission string) bool {
 
-	permissions := RolePermissions[role]
+	permissions, ok := RolePermissions[role]
+
+	log.Printf("HasPermission | role='%s' | ok=%v | permissions=%v | looking for='%s'",
+		role, ok, permissions, permission)
 
 	for _, p := range permissions {
 

@@ -170,7 +170,7 @@ func SetupRouter(
 			inventory.POST("/", inventoryHandler.CreateItem)
 			inventory.GET("/", inventoryHandler.ListItems)
 			inventory.GET("/:item_id", inventoryHandler.GetItem)
-			inventory.PATCH("/low-stock", inventoryHandler.LowStockAlerts)
+			inventory.GET("/low-stock", inventoryHandler.LowStockAlerts)
 			inventory.PATCH("/:item_id/stock", inventoryHandler.SetStock)
 		}
 

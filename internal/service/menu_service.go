@@ -66,8 +66,9 @@ func (s *MenuService) CreateCategory(ctx context.Context, menuID uuid.UUID, name
 	if err != nil {
 		return db.MenuCategory{}, err
 	}
-	// Invalidate menu categories cache
+	// Invalidate both — categories list AND full menu
 	s.Cache.Delete(ctx, cache.KeyMenuCategories(menuID.String()))
+	s.Cache.Delete(ctx, cache.KeyFullMenu(menuID.String())) // ← add this
 	return category, nil
 }
 
@@ -100,8 +101,8 @@ func (s *MenuService) AddMenuItem(ctx context.Context, categoryID uuid.UUID, nam
 	if err != nil {
 		return db.MenuItem{}, err
 	}
-	// Invalidate category items cache
 	s.Cache.Delete(ctx, cache.KeyCategoryItems(categoryID.String()))
+	s.Cache.DeleteByPattern(ctx, "menu:full:*")
 	return item, nil
 }
 

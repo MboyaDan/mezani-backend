@@ -20,6 +20,8 @@ var RolePermissions = map[Role][]string{
 		"view_reports",
 		"manage_tables",
 		//"manage_staff",
+		// Managers can view staff but not manage th
+		"manage_inventory",
 	},
 
 	RoleWaiter: {

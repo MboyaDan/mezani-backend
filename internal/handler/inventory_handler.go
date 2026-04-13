@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"log"
 	"net/http"
 
 	"mezzani_backend/internal/service"
@@ -66,6 +67,11 @@ func (h *InventoryHandler) CreateItem(c *gin.Context) {
 
 // GET /branches/:branch_id/inventory
 func (h *InventoryHandler) ListItems(c *gin.Context) {
+	role, _ := c.Get("role")
+	tenantID, _ := c.Get("tenant_id")
+	userID, _ := c.Get("user_id")
+	log.Printf("DEBUG inventory | role=%v tenant=%v user=%v", role, tenantID, userID)
+
 	branchID, err := uuid.Parse(c.Param("branch_id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid branch_id"})
