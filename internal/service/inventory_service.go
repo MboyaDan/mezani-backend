@@ -124,3 +124,9 @@ func StartInventoryWorker(q *db.Queries, branchIDs []uuid.UUID) {
 		}
 	}
 }
+
+func (s *InventoryService) DeleteItem(ctx context.Context, itemID, branchID uuid.UUID) error {
+	return s.Queries.DeleteInventoryItem(ctx, db.DeleteInventoryItemParams{
+		ID: itemID, BranchID: branchID,
+	})
+}

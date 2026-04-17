@@ -112,6 +112,7 @@ func main() {
 	cartService := service.NewSharedCartService(queries)
 	analyticsService := service.NewAnalyticsService(queries)
 	passwordResetService := service.NewPasswordResetService(queries, redisClient, emailSender, cfg.FrontendURL)
+	staffService := service.NewStaffService(queries)
 
 	orderService := service.NewOrderService(
 		queries,
@@ -137,7 +138,7 @@ func main() {
 	analyticsHandler := handler.NewAnalyticsHandler(analyticsService)
 	orderHandler := handler.NewOrderHandler(orderService)
 	billingHandler := handler.NewBillingHandler(billingService)
-	staffHandler := handler.NewStaffHandler(authService)
+	staffHandler := handler.NewStaffHandler(authService, staffService)
 	inventoryHandler := handler.NewInventoryHandler(inventoryService)
 	wsHandler := handler.NewWSHandler(hub)
 	passwordResetHandler := handler.NewPasswordResetHandler(passwordResetService)

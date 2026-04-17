@@ -64,6 +64,15 @@ func (q *Queries) CreateStaffUser(ctx context.Context, arg CreateStaffUserParams
 	return i, err
 }
 
+const deleteStaffUser = `-- name: DeleteStaffUser :exec
+DELETE FROM staff_users WHERE id = $1
+`
+
+func (q *Queries) DeleteStaffUser(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteStaffUser, id)
+	return err
+}
+
 const getBranchStaff = `-- name: GetBranchStaff :many
 SELECT id, tenant_id, branch_id, name, email, password_hash, role, created_by, created_at
 FROM staff_users

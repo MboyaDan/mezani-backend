@@ -158,3 +158,21 @@ func (h *InventoryHandler) LowStockAlerts(c *gin.Context) {
 		"items": items,
 	})
 }
+
+func (h *InventoryHandler) DeleteItem(c *gin.Context) {
+	itemID, err := uuid.Parse(c.Param("item_id"))
+	if err != nil {
+		c.JSON(400, gin.H{"error": "invalid item_id"})
+		return
+	}
+	branchID, err := uuid.Parse(c.Param("branch_id"))
+	if err != nil {
+		c.JSON(400, gin.H{"error": "invalid branch_id"})
+		return
+	}
+	if err := h.Service.DeleteItem(c.Request.Context(), itemID, branchID); err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(200, gin.H{"message": "item deleted"})
+}

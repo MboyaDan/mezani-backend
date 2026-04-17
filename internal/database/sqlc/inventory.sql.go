@@ -51,6 +51,20 @@ func (q *Queries) CreateInventoryItem(ctx context.Context, arg CreateInventoryIt
 	return i, err
 }
 
+const deleteInventoryItem = `-- name: DeleteInventoryItem :exec
+DELETE FROM inventory_items WHERE id = $1 AND branch_id = $2
+`
+
+type DeleteInventoryItemParams struct {
+	ID       uuid.UUID
+	BranchID uuid.UUID
+}
+
+func (q *Queries) DeleteInventoryItem(ctx context.Context, arg DeleteInventoryItemParams) error {
+	_, err := q.db.Exec(ctx, deleteInventoryItem, arg.ID, arg.BranchID)
+	return err
+}
+
 const getInventoryItemByID = `-- name: GetInventoryItemByID :one
 SELECT id, branch_id, name, stock, threshold, created_at
 FROM inventory_items

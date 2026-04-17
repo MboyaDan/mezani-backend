@@ -31,3 +31,5 @@ WHERE id = $1;
 SELECT *
 FROM staff_users
 WHERE id = $1;
+-- name: DeleteStaffUser :exec
+DELETE FROM staff_users WHERE id = $1;

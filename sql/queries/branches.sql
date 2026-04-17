@@ -17,3 +17,6 @@ WHERE tenant_id = $1;
 SELECT id, tenant_id, name, location, created_at
 FROM branches
 WHERE id = $1;
+
+-- name: DeleteBranch :exec
+DELETE FROM branches WHERE id = $1;

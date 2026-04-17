@@ -157,8 +157,9 @@ func SetupRouter(
 			menu.PATCH("/items/:id/sold-out", menuHandler.SetItemSoldOut)
 			menu.PATCH("/items/:id/available", menuHandler.SetItemAvailable)
 			menu.PATCH("/items/:id/special", menuHandler.SetDailySpecial)
-		}
+			menu.DELETE("/items/:id", menuHandler.DeleteMenuItem)
 
+		}
 		// ----- Inventory Management -----
 		inventory := protected.Group("/branches/:branch_id/inventory")
 		inventory.Use(middleware.RequirePermission("manage_inventory"))
@@ -172,6 +173,7 @@ func SetupRouter(
 			inventory.GET("/:item_id", inventoryHandler.GetItem)
 			inventory.GET("/low-stock", inventoryHandler.LowStockAlerts)
 			inventory.PATCH("/:item_id/stock", inventoryHandler.SetStock)
+			inventory.DELETE("/:item_id", inventoryHandler.DeleteItem)
 		}
 
 		// ----- Reporting -----
@@ -186,13 +188,15 @@ func SetupRouter(
 		staff.Use(middleware.RequirePermission("manage_staff"))
 		{
 			staff.POST("/create", staffHandler.CreateStaff)
+			staff.GET("/list", staffHandler.GetStaff)
+			staff.DELETE("/:id", staffHandler.DeleteStaff)
 		}
 
+		// ----- Owner — Branches & Tables -----
 		// ----- Owner — Branches & Tables -----
 		owner := protected.Group("/owner")
 		owner.Use(middleware.RequirePermission("manage_branches"))
 		{
-
 			owner.GET("/tables", tableHandler.GetTablesWithSessions)
 			owner.POST("/branches", branchHandler.CreateBranch)
 			owner.GET("/branches", branchHandler.ListBranches)
@@ -202,6 +206,13 @@ func SetupRouter(
 					return branch.TenantID, err
 				}),
 				tableHandler.CreateTable,
+			)
+			owner.DELETE("/branches/:id",
+				middleware.TenantBranchGuard("id", func(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
+					branch, err := branchService.GetBranchByID(ctx, id)
+					return branch.TenantID, err
+				}),
+				branchHandler.DeleteBranch,
 			)
 		}
 	}

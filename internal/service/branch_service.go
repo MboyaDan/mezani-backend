@@ -37,3 +37,7 @@ func (s *BranchService) GetBranchByID(ctx context.Context, branchID uuid.UUID) (
 func (s *BranchService) GetBranchesByTenant(ctx context.Context, tenantID uuid.UUID) ([]db.Branch, error) {
 	return s.Queries.GetBranchesByTenant(ctx, tenantID)
 }
+
+func (s *BranchService) DeleteBranch(ctx context.Context, id uuid.UUID) error {
+	return s.Queries.DeleteBranch(ctx, id)
+}

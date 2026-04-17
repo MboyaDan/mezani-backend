@@ -219,3 +219,7 @@ func (s *MenuService) GetSessionInfo(ctx context.Context, sessionID uuid.UUID) (
 		Status:      row.Status,
 	}, nil
 }
+
+func (s *MenuService) DeleteMenuItem(ctx context.Context, id uuid.UUID) error {
+	return s.Queries.DeleteMenuItem(ctx, id)
+}

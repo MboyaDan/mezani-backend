@@ -42,3 +42,7 @@ WHERE id = $1;
 UPDATE menu_items
 SET is_special = $2
 WHERE id = $1;
+
+-- name: DeleteMenuItem :exec
+DELETE FROM menu_items WHERE id = $1;
+

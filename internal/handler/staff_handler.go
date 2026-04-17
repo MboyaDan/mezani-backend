@@ -1,18 +1,24 @@
 package handler
 
 import (
-	"mezzani_backend/internal/service"
+	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+
+	"mezzani_backend/internal/service"
 )
 
 type StaffHandler struct {
-	Service *service.AuthService
+	Service      *service.AuthService
+	StaffService *service.StaffService
 }
 
-func NewStaffHandler(s *service.AuthService) *StaffHandler {
-	return &StaffHandler{Service: s}
+func NewStaffHandler(auth *service.AuthService, staff *service.StaffService) *StaffHandler {
+	return &StaffHandler{
+		Service:      auth,
+		StaffService: staff,
+	}
 }
 
 var validRoles = map[string]bool{
@@ -33,12 +39,12 @@ type CreateStaffRequest struct {
 func (h *StaffHandler) CreateStaff(c *gin.Context) {
 	var req CreateStaffRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(400, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
 	if !validRoles[req.Role] {
-		c.JSON(400, gin.H{"error": "invalid role, must be one of: manager, waiter, kitchen, cashier"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid role, must be one of: manager, waiter, kitchen, cashier"})
 		return
 	}
 
@@ -47,19 +53,19 @@ func (h *StaffHandler) CreateStaff(c *gin.Context) {
 
 	tenantID, err := uuid.Parse(tenantIDStr.(string))
 	if err != nil {
-		c.JSON(400, gin.H{"error": "invalid tenant_id in token"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid tenant_id in token"})
 		return
 	}
 
 	createdBy, err := uuid.Parse(userIDStr.(string))
 	if err != nil {
-		c.JSON(400, gin.H{"error": "invalid user_id in token"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user_id in token"})
 		return
 	}
 
 	branchID, err := uuid.Parse(req.BranchID)
 	if err != nil {
-		c.JSON(400, gin.H{"error": "invalid branch_id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid branch_id"})
 		return
 	}
 
@@ -74,9 +80,44 @@ func (h *StaffHandler) CreateStaff(c *gin.Context) {
 		req.Role,
 	)
 	if err != nil {
-		c.JSON(500, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(201, staff)
+	c.JSON(http.StatusCreated, staff)
+}
+
+func (h *StaffHandler) GetStaff(c *gin.Context) {
+	branchIDRaw := c.Query("branch_id")
+	if branchIDRaw == "" {
+		branchIDVal, _ := c.Get("branch_id")
+		branchIDRaw, _ = branchIDVal.(string)
+	}
+
+	branchID, err := uuid.Parse(branchIDRaw)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid branch_id"})
+		return
+	}
+
+	staff, err := h.StaffService.GetStaffByBranch(c.Request.Context(), branchID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, staff)
+}
+
+func (h *StaffHandler) DeleteStaff(c *gin.Context) {
+	staffID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid staff id"})
+		return
+	}
+
+	if err := h.StaffService.DeleteStaff(c.Request.Context(), staffID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "staff deleted"})
 }

@@ -14,7 +14,6 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/crypto/bcrypt"
 
@@ -50,15 +49,6 @@ func NewAuthService(q *db.Queries, key []byte, redisClient *redis.Client, logger
 		RefreshTokenTTL: 7 * 24 * time.Hour,
 		Logger:          logger,
 	}
-}
-
-// ---------------- HELPERS ----------------
-
-func uuidToPgtype(id uuid.UUID) pgtype.UUID {
-	if id == uuid.Nil {
-		return pgtype.UUID{Valid: false}
-	}
-	return pgtype.UUID{Bytes: id, Valid: true}
 }
 
 // isValidEmail uses net/mail for proper RFC 5322 validation.
@@ -235,17 +225,25 @@ func (s *AuthService) Login(
 
 // ---------------- TOKENS ----------------
 
-func (s *AuthService) generateAccessToken(user db.StaffUser) (string, error) {
+func (s *AuthService) generateAccessToken(ctx context.Context, user db.StaffUser) (string, error) {
+
 	var branchID string
 	if user.BranchID.Valid {
 		branchID = uuid.UUID(user.BranchID.Bytes).String()
 	}
 
+	tenant, err := s.Queries.GetTenantByID(ctx, user.TenantID)
+	if err != nil {
+		s.Logger.ErrorContext(ctx, "failed to fetch tenant", "tenant_id", user.TenantID)
+		return "", common.ErrInternalServer
+	}
+
 	claims := auth.Claims{
-		UserID:   user.ID.String(),
-		TenantID: user.TenantID.String(),
-		BranchID: branchID,
-		Role:     user.Role,
+		UserID:     user.ID.String(),
+		TenantID:   user.TenantID.String(),
+		TenantName: tenant.Name,
+		BranchID:   branchID,
+		Role:       user.Role,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   user.ID.String(),
 			ID:        uuid.NewString(),
@@ -258,7 +256,6 @@ func (s *AuthService) generateAccessToken(user db.StaffUser) (string, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(s.JWTKey)
 }
-
 func (s *AuthService) generateRefreshToken(ctx context.Context, userID uuid.UUID) (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
@@ -280,7 +277,7 @@ func (s *AuthService) generateRefreshToken(ctx context.Context, userID uuid.UUID
 }
 
 func (s *AuthService) GenerateTokenPair(ctx context.Context, user db.StaffUser) (TokenPair, error) {
-	accessToken, err := s.generateAccessToken(user)
+	accessToken, err := s.generateAccessToken(ctx, user)
 	if err != nil {
 		s.Logger.ErrorContext(ctx, "failed to generate access token", "user_id", user.ID)
 		return TokenPair{}, common.ErrInternalServer

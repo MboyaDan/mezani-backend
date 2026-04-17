@@ -64,3 +64,16 @@ func (h *BranchHandler) ListBranches(c *gin.Context) {
 	}
 	c.JSON(200, branches)
 }
+
+func (h *BranchHandler) DeleteBranch(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(400, gin.H{"error": "invalid id"})
+		return
+	}
+	if err := h.Service.DeleteBranch(c.Request.Context(), id); err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(200, gin.H{"message": "branch deleted"})
+}

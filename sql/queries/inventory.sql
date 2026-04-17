@@ -39,3 +39,6 @@ SELECT *
 FROM inventory_items
 WHERE id = $1
   AND branch_id = $2;
+
+-- name: DeleteInventoryItem :exec
+DELETE FROM inventory_items WHERE id = $1 AND branch_id = $2;

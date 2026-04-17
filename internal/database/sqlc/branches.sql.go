@@ -47,6 +47,15 @@ func (q *Queries) CreateBranch(ctx context.Context, arg CreateBranchParams) (Bra
 	return i, err
 }
 
+const deleteBranch = `-- name: DeleteBranch :exec
+DELETE FROM branches WHERE id = $1
+`
+
+func (q *Queries) DeleteBranch(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteBranch, id)
+	return err
+}
+
 const getBranchByID = `-- name: GetBranchByID :one
 SELECT id, tenant_id, name, location, created_at
 FROM branches
