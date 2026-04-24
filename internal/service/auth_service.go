@@ -238,12 +238,15 @@ func (s *AuthService) generateAccessToken(ctx context.Context, user db.StaffUser
 		return "", common.ErrInternalServer
 	}
 
+	// ---- CHANGED: added TenantCreatedAt and Plan to claims ----
 	claims := auth.Claims{
-		UserID:     user.ID.String(),
-		TenantID:   user.TenantID.String(),
-		TenantName: tenant.Name,
-		BranchID:   branchID,
-		Role:       user.Role,
+		UserID:          user.ID.String(),
+		TenantID:        user.TenantID.String(),
+		TenantName:      tenant.Name,
+		BranchID:        branchID,
+		Role:            user.Role,
+		TenantCreatedAt: tenant.CreatedAt.Unix(), // trial start date
+		Plan:            tenant.Plan,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   user.ID.String(),
 			ID:        uuid.NewString(),
@@ -252,10 +255,12 @@ func (s *AuthService) generateAccessToken(ctx context.Context, user db.StaffUser
 			Issuer:    "mezzani-api",
 		},
 	}
+	// -----------------------------------------------------------
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(s.JWTKey)
 }
+
 func (s *AuthService) generateRefreshToken(ctx context.Context, userID uuid.UUID) (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {

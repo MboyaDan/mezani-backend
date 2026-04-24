@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"time"
 
@@ -218,6 +219,34 @@ func (s *MenuService) GetSessionInfo(ctx context.Context, sessionID uuid.UUID) (
 		BranchID:    row.BranchID.String(),
 		Status:      row.Status,
 	}, nil
+}
+
+func (s *MenuService) HasActiveSession(ctx context.Context, tableID uuid.UUID) (bool, error) {
+	cacheKey := "table:active:" + tableID.String()
+
+	// 1. Try cache
+	var cached bool
+	err := s.Cache.Get(ctx, cacheKey, &cached)
+	if err == nil {
+		return cached, nil
+	}
+
+	// 2. Query DB using EXISTING query
+	_, err = s.Queries.GetActiveTableSessionByTable(ctx, tableID)
+
+	if err == nil {
+		s.Cache.Set(ctx, cacheKey, true, 5*time.Second)
+		return true, nil
+	}
+
+	// 3. No active session
+	if errors.Is(err, sql.ErrNoRows) {
+		s.Cache.Set(ctx, cacheKey, false, 5*time.Second)
+		return false, nil
+	}
+
+	// 4. Real error
+	return false, err
 }
 
 func (s *MenuService) DeleteMenuItem(ctx context.Context, id uuid.UUID) error {

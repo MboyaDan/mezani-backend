@@ -20,13 +20,20 @@ func NewCustomerSessionService(q *db.Queries) *CustomerSessionService {
 
 func (s *CustomerSessionService) JoinTableSession(
 	ctx context.Context,
-	tableSessionID uuid.UUID,
+	tableID uuid.UUID,
 	name string,
 ) (db.CustomerSession, error) {
 
+	//  Resolve active session first
+	session, err := s.Queries.GetActiveTableSessionByTable(ctx, tableID)
+	if err != nil {
+		return db.CustomerSession{}, err
+	}
+
+	// Use session.ID
 	customer, err := s.Queries.CreateCustomerSession(ctx, db.CreateCustomerSessionParams{
 		ID:             uuid.New(),
-		TableSessionID: tableSessionID,
+		TableSessionID: session.ID,
 		Name:           name,
 	})
 
@@ -36,7 +43,6 @@ func (s *CustomerSessionService) JoinTableSession(
 
 	return customer, nil
 }
-
 func (s *CustomerSessionService) GetCustomer(
 	ctx context.Context,
 	customerID uuid.UUID,

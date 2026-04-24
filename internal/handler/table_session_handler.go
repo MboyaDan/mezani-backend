@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -24,16 +25,32 @@ type StartSessionRequest struct {
 
 func (h *TableSessionHandler) StartSession(c *gin.Context) {
 	var req StartSessionRequest
+
 	if err := c.ShouldBindJSON(&req); err != nil {
+		log.Println("BIND ERROR:", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	tableID, _ := uuid.Parse(req.TableID)
+
+	log.Println("START SESSION CALLED WITH:", req.TableID, req.Duration)
+
+	tableID, err := uuid.Parse(req.TableID)
+	if err != nil {
+		log.Println("UUID PARSE ERROR:", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid table id"})
+		return
+	}
+
 	session, err := h.Service.StartSession(c.Request.Context(), tableID, req.Duration)
 	if err != nil {
+		log.Println("START SESSION ERROR:", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+
+	log.Println("SESSION CREATED:", session.ID)
+	log.Printf("CREATED SESSION: %+v", session)
+
 	c.JSON(http.StatusOK, session)
 }
 

@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"time"
@@ -13,11 +15,15 @@ import (
 )
 
 type MenuHandler struct {
-	Service *service.MenuService
+	Service             *service.MenuService
+	TableSessionService *service.TableSessionService
 }
 
-func NewMenuHandler(s *service.MenuService) *MenuHandler {
-	return &MenuHandler{Service: s}
+func NewMenuHandler(s *service.MenuService, t *service.TableSessionService) *MenuHandler {
+	return &MenuHandler{
+		Service:             s,
+		TableSessionService: t,
+	}
 }
 
 //
@@ -447,4 +453,39 @@ func (h *MenuHandler) DeleteMenuItem(c *gin.Context) {
 		return
 	}
 	c.JSON(200, gin.H{"message": "item deleted"})
+}
+
+func (h *MenuHandler) CheckSessionStatus(c *gin.Context) {
+	tableIDStr := c.Param("table_id")
+
+	tableID, err := uuid.Parse(tableIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid table id"})
+		return
+	}
+
+	// Get the active session
+	session, err := h.TableSessionService.GetActiveSessionByTable(c.Request.Context(), tableID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			c.JSON(http.StatusOK, gin.H{"active": false})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check session"})
+		return
+	}
+
+	// Fetch table number separately
+	table, err := h.TableSessionService.Queries.GetTable(c.Request.Context(), session.TableID)
+	tableNumber := 0
+	if err == nil {
+		tableNumber = int(table.TableNumber)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"active":       true,
+		"session_id":   session.ID.String(),
+		"expires_at":   session.ExpiresAt,
+		"table_number": tableNumber,
+	})
 }

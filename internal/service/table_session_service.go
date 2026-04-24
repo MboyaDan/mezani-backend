@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"errors"
+	"log"
 	"time"
 
 	db "mezzani_backend/internal/database/sqlc"
@@ -26,32 +28,56 @@ func (s *TableSessionService) StartSession(
 	durationMinutes int,
 ) (db.TableSession, error) {
 
-	//  Check if an active session already exists
+	log.Println("START SESSION SERVICE CALLED")
+	log.Println("TABLE ID:", tableID)
+
+	// 1. Check if an active session already exists
 	existing, err := s.Queries.GetActiveTableSessionByTable(ctx, tableID)
 
 	if err == nil {
-		// session already active → reuse it
+		log.Println("EXISTING ACTIVE SESSION FOUND:", existing.ID)
 		return existing, nil
 	}
 
-	// Calculate expiration time
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		log.Println("ERROR CHECKING EXISTING SESSION:", err)
+		return db.TableSession{}, err
+	}
+
+	log.Println("NO ACTIVE SESSION FOUND — CREATING NEW ONE")
+
+	// 2. Calculate expiration time
 	expiresAt := time.Now().Add(
 		time.Duration(durationMinutes) * time.Minute,
 	)
 
-	// Create new session
+	log.Println("EXPIRES AT:", expiresAt)
+
+	// 3. Create new session
+	sessionID := uuid.New()
+
+	log.Println("INSERTING SESSION WITH ID:", sessionID)
+
 	session, err := s.Queries.CreateTableSession(
 		ctx,
 		db.CreateTableSessionParams{
-			ID:        uuid.New(),
+			ID:        sessionID,
 			TableID:   tableID,
 			ExpiresAt: expiresAt,
 		},
 	)
 
 	if err != nil {
+		log.Println("CREATE SESSION ERROR:", err)
 		return db.TableSession{}, err
 	}
+
+	log.Println("SESSION INSERTED:", session.ID)
+
+	//  CRITICAL DEBUG CHECK
+	check, err := s.Queries.GetActiveTableSessionByTable(ctx, tableID)
+	log.Println("POST-INSERT CHECK RESULT:", check)
+	log.Println("POST-INSERT CHECK ERROR:", err)
 
 	return session, nil
 }
@@ -84,4 +110,8 @@ func (s *TableSessionService) Heartbeat(
 ) error {
 
 	return s.Queries.ExtendTableSession(ctx, sessionID)
+}
+
+func (s *TableSessionService) GetActiveSessionByTable(ctx context.Context, tableID uuid.UUID) (db.TableSession, error) {
+	return s.Queries.GetActiveTableSessionByTable(ctx, tableID)
 }

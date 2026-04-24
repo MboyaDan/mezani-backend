@@ -91,6 +91,7 @@ func SetupRouter(
 		public.GET("/categories/:category_id/items", middleware.RelaxedRateLimit(), menuHandler.GetCategoryItems)
 		public.GET("/table-sessions/:session_id/menu", middleware.RelaxedRateLimit(), menuHandler.GetMenuBySession)
 		public.GET("/table-sessions/:session_id/info", middleware.RelaxedRateLimit(), menuHandler.GetSessionInfo)
+		public.GET("/tables/:table_id/session-status", middleware.RelaxedRateLimit(), menuHandler.CheckSessionStatus)
 
 		// ----- Customer Flow (QR scan — no JWT) -----
 		// These are intentionally public. Customers join via QR code links.
@@ -192,7 +193,6 @@ func SetupRouter(
 			staff.DELETE("/:id", staffHandler.DeleteStaff)
 		}
 
-		// ----- Owner — Branches & Tables -----
 		// ----- Owner — Branches & Tables -----
 		owner := protected.Group("/owner")
 		owner.Use(middleware.RequirePermission("manage_branches"))

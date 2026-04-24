@@ -20,8 +20,8 @@ SELECT *
 FROM table_sessions
 WHERE table_id = $1
 AND status = 'active'
+AND expires_at > NOW()
 LIMIT 1;
-
 
 -- name: CloseTableSession :exec
 UPDATE table_sessions

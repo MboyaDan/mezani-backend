@@ -129,7 +129,7 @@ func main() {
 
 	// ================= HANDLERS =================
 	authHandler := handler.NewAuthHandler(authService)
-	menuHandler := handler.NewMenuHandler(menuService)
+	menuHandler := handler.NewMenuHandler(menuService, tableSessionService)
 	branchHandler := handler.NewBranchHandler(branchService)
 	tableHandler := handler.NewTableHandler(tableService)
 	tableSessionHandler := handler.NewTableSessionHandler(tableSessionService)

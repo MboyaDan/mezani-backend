@@ -70,6 +70,7 @@ SELECT id, table_id, status, expires_at, created_at
 FROM table_sessions
 WHERE table_id = $1
 AND status = 'active'
+AND expires_at > NOW()
 LIMIT 1
 `
 
