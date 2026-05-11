@@ -8,6 +8,7 @@ package db
 import (
 	"context"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -17,12 +18,17 @@ SELECT
 FROM orders o
 JOIN order_items oi ON o.id = oi.order_id
 JOIN menu_items mi ON oi.menu_item_id = mi.id
+JOIN table_sessions ts ON o.table_session_id = ts.id
+JOIN tables t ON ts.table_id = t.id
 WHERE o.status = 'paid'
-AND DATE(o.created_at) = CURRENT_DATE
+AND o.created_at >= CURRENT_DATE
+AND o.created_at <  CURRENT_DATE + INTERVAL '1 day'
+AND t.branch_id = $1
 `
 
-func (q *Queries) GetDailySales(ctx context.Context) (interface{}, error) {
-	row := q.db.QueryRow(ctx, getDailySales)
+// Fix: range comparison instead of DATE() so the index on created_at is used
+func (q *Queries) GetDailySales(ctx context.Context, branchID uuid.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, getDailySales, branchID)
 	var total_sales interface{}
 	err := row.Scan(&total_sales)
 	return total_sales, err
@@ -33,6 +39,10 @@ SELECT
     EXTRACT(HOUR FROM o.created_at) AS hour,
     COUNT(*) AS order_count
 FROM orders o
+JOIN table_sessions ts ON o.table_session_id = ts.id
+JOIN tables t ON ts.table_id = t.id
+WHERE t.branch_id = $1
+AND o.status IN ('paid', 'served')      -- exclude pending/cancelled
 GROUP BY hour
 ORDER BY order_count DESC
 `
@@ -42,8 +52,9 @@ type GetPeakHoursRow struct {
 	OrderCount int64
 }
 
-func (q *Queries) GetPeakHours(ctx context.Context) ([]GetPeakHoursRow, error) {
-	rows, err := q.db.Query(ctx, getPeakHours)
+// Fix: filter to meaningful statuses only
+func (q *Queries) GetPeakHours(ctx context.Context, branchID uuid.UUID) ([]GetPeakHoursRow, error) {
+	rows, err := q.db.Query(ctx, getPeakHours, branchID)
 	if err != nil {
 		return nil, err
 	}
@@ -67,7 +78,12 @@ SELECT
     mi.name,
     SUM(oi.quantity) AS total_sold
 FROM order_items oi
+JOIN orders o ON oi.order_id = o.id
 JOIN menu_items mi ON oi.menu_item_id = mi.id
+JOIN table_sessions ts ON o.table_session_id = ts.id
+JOIN tables t ON ts.table_id = t.id
+WHERE t.branch_id = $1
+AND o.status IN ('paid', 'served')      -- exclude pending/cancelled
 GROUP BY mi.name
 ORDER BY total_sold DESC
 LIMIT 5
@@ -78,8 +94,9 @@ type GetPopularItemsRow struct {
 	TotalSold int64
 }
 
-func (q *Queries) GetPopularItems(ctx context.Context) ([]GetPopularItemsRow, error) {
-	rows, err := q.db.Query(ctx, getPopularItems)
+// Fix: filter to meaningful statuses only
+func (q *Queries) GetPopularItems(ctx context.Context, branchID uuid.UUID) ([]GetPopularItemsRow, error) {
+	rows, err := q.db.Query(ctx, getPopularItems, branchID)
 	if err != nil {
 		return nil, err
 	}
@@ -100,15 +117,20 @@ func (q *Queries) GetPopularItems(ctx context.Context) ([]GetPopularItemsRow, er
 
 const getReturningCustomers = `-- name: GetReturningCustomers :one
 SELECT COUNT(*) FROM (
-    SELECT customer_session_id
-    FROM orders
-    GROUP BY customer_session_id
+    SELECT o.customer_session_id
+    FROM orders o
+    JOIN table_sessions ts ON o.table_session_id = ts.id
+    JOIN tables t ON ts.table_id = t.id
+    WHERE t.branch_id = $1
+    AND o.status IN ('paid', 'served')  -- only count real completed visits
+    GROUP BY o.customer_session_id
     HAVING COUNT(*) > 1
 ) AS returning_customers
 `
 
-func (q *Queries) GetReturningCustomers(ctx context.Context) (int64, error) {
-	row := q.db.QueryRow(ctx, getReturningCustomers)
+// Fix: filter to meaningful statuses only
+func (q *Queries) GetReturningCustomers(ctx context.Context, branchID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, getReturningCustomers, branchID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
