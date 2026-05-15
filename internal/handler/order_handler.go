@@ -47,13 +47,11 @@ type SubmitCartRequest struct {
 func (h *OrderHandler) SubmitCart(c *gin.Context) {
 	var req SubmitCartRequest
 
-	//  Validate request body
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	//  Parse ALL UUIDs safely (no ignoring errors)
 	tableSessionID, err := uuid.Parse(req.TableSessionID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid table_session_id"})
@@ -79,7 +77,8 @@ func (h *OrderHandler) SubmitCart(c *gin.Context) {
 		cartID,
 	)
 
-	// Call service
+	// No hub needed here — service publishes to EventBus,
+	// StartKitchenWorker picks it up and routes to the right branch via BroadcastToBranch
 	order, err := h.Service.SubmitCart(
 		c.Request.Context(),
 		tableSessionID,
@@ -108,13 +107,11 @@ type UpdateStatusRequest struct {
 func (h *OrderHandler) UpdateStatus(c *gin.Context) {
 	var req UpdateStatusRequest
 
-	//  Validate request
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	//  Validate status
 	if !validOrderStatuses[req.Status] {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "invalid status, must be one of: accepted, preparing, ready, served, paid",
@@ -122,7 +119,6 @@ func (h *OrderHandler) UpdateStatus(c *gin.Context) {
 		return
 	}
 
-	//  Parse UUID safely
 	orderID, err := uuid.Parse(req.OrderID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid order_id"})
@@ -135,7 +131,8 @@ func (h *OrderHandler) UpdateStatus(c *gin.Context) {
 		req.Status,
 	)
 
-	//  Update
+	//  No hub needed here — service publishes to EventBus,
+	// StartKitchenWorker picks it up and routes to the right branch via BroadcastToBranch
 	if err := h.Service.UpdateStatus(c.Request.Context(), orderID, req.Status); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -143,6 +140,12 @@ func (h *OrderHandler) UpdateStatus(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"status": "updated"})
 }
+
+//
+// =========================
+// GET RECENT ORDERS
+// =========================
+//
 
 func (h *OrderHandler) GetRecentOrders(c *gin.Context) {
 	branchIDStr, exists := c.Get("branch_id")

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"time"
 
@@ -65,7 +66,7 @@ func (s *OrderService) SubmitCart(
 		return db.Order{}, err
 	}
 
-	// Only log activity if a real staff member is in context
+	// Only log activity if a real staff member is in context.
 	staffID, branchID := staffFromContext(ctx)
 	if staffID != uuid.Nil {
 		s.Activity.Log(ctx, ActivityParams{
@@ -105,22 +106,34 @@ func (s *OrderService) SubmitCart(
 		return db.Order{}, err
 	}
 
-	// Fetch table number for kitchen display
+	// Fetch table number AND branch_id for kitchen routing.
 	var tableNumber int32
+	var branchIDForKDS uuid.UUID
+
 	table, err := s.Queries.GetTable(ctx, session.TableID)
-	if err == nil {
-		tableNumber = table.TableNumber
+	if err != nil {
+		// FIX (Silent error — SubmitCart): Failing to resolve the table means we
+		// cannot route the KDS event to the correct branch. Rather than silently
+		// publishing an event with a zero BranchID (which the worker would either
+		// drop or misroute), return an error so the caller can retry or surface the
+		// problem. The order row has already been created; callers may choose to
+		// wrap this whole function in a transaction if atomicity is required.
+		return db.Order{}, fmt.Errorf("order created but failed to resolve table for KDS routing (tableID %s): %w", session.TableID, err)
 	}
+	tableNumber = table.TableNumber
+	branchIDForKDS = table.BranchID
+
+	log.Println("KDS EVENT BRANCH:", branchIDForKDS)
 
 	event := notifications.KDSOrderCreatedEvent{
 		Type:        "new_order",
 		OrderID:     order.ID.String(),
+		BranchID:    branchIDForKDS.String(),
 		TableID:     tableSessionID.String(),
 		TableNumber: tableNumber,
 		Items:       items,
 	}
 
-	// Log publish errors instead of silently swallowing them
 	if err := s.EventBus.Publish("orders.new", event); err != nil {
 		log.Printf("Warning: failed to publish KDS order.create event: %v", err)
 	}
@@ -176,7 +189,7 @@ func (s *OrderService) UpdateStatus(
 		return errors.New("order status changed by another process")
 	}
 
-	//  Only log activity if a real staff member is in context
+	// Only log activity if a real staff member is in context.
 	staffID, branchID := staffFromContext(ctx)
 	if staffID != uuid.Nil {
 		s.Activity.Log(ctx, ActivityParams{
@@ -190,26 +203,55 @@ func (s *OrderService) UpdateStatus(
 		})
 	}
 
-	// Deduct stock when order is confirmed
+	// Deduct stock when order is confirmed.
 	if newStatus == "confirmed" {
 		if err := s.Inventory.DeductForOrder(ctx, orderID, branchID); err != nil {
 			log.Println("stock deduction failed:", err)
-			// log only — don't fail the order over stock tracking
 		}
 	}
 
-	// Restore stock when a confirmed order is cancelled
+	// Restore stock when a confirmed order is cancelled.
 	if newStatus == "cancelled" && string(current) == "confirmed" {
 		if err := s.Inventory.RestoreForOrder(ctx, orderID, branchID); err != nil {
 			log.Println("stock restore failed:", err)
 		}
 	}
 
-	// TO:
+	// FIX (Silent error — UpdateStatus): When no staff context is present (e.g.
+	// a customer-triggered update), we must resolve branchID from the DB to route
+	// the KDS event correctly. The original code silently swallowed both the
+	// GetTableSession and GetTable errors, meaning a DB failure would publish an
+	// event with a zero BranchID — causing the kitchen display worker to silently
+	// drop or misroute the update.
+	//
+	// Now we return a descriptive error so the caller knows the status was updated
+	// but the KDS notification could not be dispatched. Operators can decide
+	// whether to retry or alert.
+	if branchID == uuid.Nil {
+		session, err := s.Queries.GetTableSession(ctx, updatedOrder.TableSessionID)
+		if err != nil {
+			return fmt.Errorf(
+				"order status updated but failed to resolve table session for KDS routing (tableSessionID %s): %w",
+				updatedOrder.TableSessionID, err,
+			)
+		}
+
+		table, err := s.Queries.GetTable(ctx, session.TableID)
+		if err != nil {
+			return fmt.Errorf(
+				"order status updated but failed to resolve table for KDS routing (tableID %s): %w",
+				session.TableID, err,
+			)
+		}
+
+		branchID = table.BranchID
+	}
+
 	event := notifications.KDSOrderStatusUpdatedEvent{
-		Type:    "order_updated",
-		OrderID: updatedOrder.ID.String(),
-		Status:  updatedOrder.Status,
+		Type:     "order_updated",
+		OrderID:  updatedOrder.ID.String(),
+		BranchID: branchID.String(),
+		Status:   updatedOrder.Status,
 	}
 
 	if err := s.EventBus.Publish("orders.status", event); err != nil {
@@ -219,7 +261,7 @@ func (s *OrderService) UpdateStatus(
 	return nil
 }
 
-// staffFromContext pulls staff_id and branch_id from the auth context
+// staffFromContext pulls staff_id and branch_id from the auth context.
 func staffFromContext(ctx context.Context) (staffID uuid.UUID, branchID uuid.UUID) {
 	if id, ok := ctx.Value("user_id").(string); ok {
 		staffID, _ = uuid.Parse(id)
@@ -231,52 +273,52 @@ func staffFromContext(ctx context.Context) (staffID uuid.UUID, branchID uuid.UUI
 }
 
 type OrderWithItems struct {
-    ID          string      `json:"id"`
-    TableNumber int32       `json:"table_number"`
-    Status      string      `json:"status"`
-    CreatedAt   time.Time   `json:"created_at"`
-    Items       []OrderItem `json:"items"`
-    Total       float64     `json:"total"`
+	ID          string      `json:"id"`
+	TableNumber int32       `json:"table_number"`
+	Status      string      `json:"status"`
+	CreatedAt   time.Time   `json:"created_at"`
+	Items       []OrderItem `json:"items"`
+	Total       float64     `json:"total"`
 }
 
 type OrderItem struct {
-    Name     string  `json:"name"`
-    Quantity int32   `json:"quantity"`
-    Price    float64 `json:"price"`
+	Name     string  `json:"name"`
+	Quantity int32   `json:"quantity"`
+	Price    float64 `json:"price"`
 }
 
 func (s *OrderService) GetRecentOrders(ctx context.Context, branchID uuid.UUID) ([]OrderWithItems, error) {
-    orders, err := s.Queries.GetRecentOrdersByBranch(ctx, branchID)
-    if err != nil {
-        return nil, err
-    }
+	orders, err := s.Queries.GetRecentOrdersByBranch(ctx, branchID)
+	if err != nil {
+		return nil, err
+	}
 
-    result := make([]OrderWithItems, 0, len(orders))
-    for _, o := range orders {
-        items, err := s.Queries.GetOrderItemsByOrder(ctx, o.ID)
-        if err != nil {
-            continue
-        }
+	result := make([]OrderWithItems, 0, len(orders))
+	for _, o := range orders {
+		items, err := s.Queries.GetOrderItemsByOrder(ctx, o.ID)
+		if err != nil {
+			continue
+		}
 
-        var total float64
-        orderItems := make([]OrderItem, 0, len(items))
-        for _, item := range items {
-            orderItems = append(orderItems, OrderItem{
-                Name:     item.Name,
-                Quantity: item.Quantity,
-                Price:    item.Price,
-            })
-            total += item.Price * float64(item.Quantity)
-        }
+		var total float64
+		orderItems := make([]OrderItem, 0, len(items))
+		for _, item := range items {
+			orderItems = append(orderItems, OrderItem{
+				Name:     item.Name,
+				Quantity: item.Quantity,
+				Price:    item.Price,
+			})
+			total += item.Price * float64(item.Quantity)
+		}
 
-        result = append(result, OrderWithItems{
-            ID:          o.ID.String(),
-            TableNumber: o.TableNumber,
-            Status:      o.Status,
-            CreatedAt:   o.CreatedAt,
-            Items:       orderItems,
-            Total:       total,
-        })
-    }
-    return result, nil
+		result = append(result, OrderWithItems{
+			ID:          o.ID.String(),
+			TableNumber: o.TableNumber,
+			Status:      o.Status,
+			CreatedAt:   o.CreatedAt,
+			Items:       orderItems,
+			Total:       total,
+		})
+	}
+	return result, nil
 }

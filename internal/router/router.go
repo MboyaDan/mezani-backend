@@ -110,6 +110,16 @@ func SetupRouter(
 	protected.Use(middleware.AuthMiddleware(jwtSecret))
 	protected.Use(middleware.RelaxedRateLimit())
 	{
+		// ----- Waiter — Tables & Orders -----
+		// Uses create_orders permission which waiters already have.
+		// Scoped to the branch_id from their JWT — no query param needed.
+		waiter := protected.Group("/waiter")
+		waiter.Use(middleware.RequirePermission("create_orders"))
+		{
+			waiter.GET("/tables", tableHandler.GetTablesWithSessions)
+
+		}
+
 		// ----- Table Session Management -----
 		table := protected.Group("/table-session")
 		{
