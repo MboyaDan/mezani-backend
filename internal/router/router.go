@@ -57,11 +57,9 @@ func SetupRouter(
 	}))
 
 	// ----- WebSocket -----
-	// Registered in the public group so CORS middleware applies.
-	// The handler performs its own connection-level auth.
 	r.GET("/ws/kitchen", wsHandler.HandleWS)
-	// ========== PUBLIC ROUTES (No Auth Required) ==========
 
+	// ========== PUBLIC ROUTES (No Auth Required) ==========
 	public := r.Group("/api")
 	{
 		// ----- Auth -----
@@ -94,7 +92,6 @@ func SetupRouter(
 		public.GET("/tables/:table_id/session-status", middleware.RelaxedRateLimit(), menuHandler.CheckSessionStatus)
 
 		// ----- Customer Flow (QR scan — no JWT) -----
-		// These are intentionally public. Customers join via QR code links.
 		public.POST("/customer/join", middleware.ModerateRateLimit(), customerHandler.JoinTable)
 		public.GET("/customer/table/:table_session_id", middleware.ModerateRateLimit(), customerHandler.ListCustomers)
 		public.GET("/customer/:id", middleware.ModerateRateLimit(), customerHandler.GetCustomer)
@@ -102,7 +99,6 @@ func SetupRouter(
 		public.POST("/cart/join", middleware.ModerateRateLimit(), cartHandler.JoinCart)
 		public.POST("/cart/add-item", middleware.ModerateRateLimit(), cartHandler.AddItem)
 		public.POST("/orders/submit", middleware.ModerateRateLimit(), orderHandler.SubmitCart)
-
 	}
 
 	// ========== PROTECTED ROUTES (JWT Required) ==========
@@ -110,14 +106,18 @@ func SetupRouter(
 	protected.Use(middleware.AuthMiddleware(jwtSecret))
 	protected.Use(middleware.RelaxedRateLimit())
 	{
-		// ----- Waiter — Tables & Orders -----
-		// Uses create_orders permission which waiters already have.
-		// Scoped to the branch_id from their JWT — no query param needed.
+		// ----- Manager — Tables (view + manage, no add) -----
+		manager := protected.Group("/manager")
+		manager.Use(middleware.RequirePermission("manage_tables"))
+		{
+			manager.GET("/tables", tableHandler.GetTablesWithSessions)
+		}
+
+		// ----- Waiter — Tables -----
 		waiter := protected.Group("/waiter")
 		waiter.Use(middleware.RequirePermission("create_orders"))
 		{
 			waiter.GET("/tables", tableHandler.GetTablesWithSessions)
-
 		}
 
 		// ----- Table Session Management -----
@@ -129,7 +129,6 @@ func SetupRouter(
 		}
 
 		// ----- Order Management -----
-		// Kitchen display uses the same status update — one route, one permission.
 		orders := protected.Group("/orders")
 		{
 			orders.PATCH("/:id/status",
@@ -143,8 +142,6 @@ func SetupRouter(
 		kitchen := protected.Group("/kitchen")
 		kitchen.Use(middleware.RequirePermission("view_kitchen_display"))
 		{
-
-			//I will replace with a proper ListKitchenOrders handler when available
 			kitchen.PATCH("/orders/:id/status", orderHandler.UpdateStatus)
 		}
 
@@ -169,8 +166,8 @@ func SetupRouter(
 			menu.PATCH("/items/:id/available", menuHandler.SetItemAvailable)
 			menu.PATCH("/items/:id/special", menuHandler.SetDailySpecial)
 			menu.DELETE("/items/:id", menuHandler.DeleteMenuItem)
-
 		}
+
 		// ----- Inventory Management -----
 		inventory := protected.Group("/branches/:branch_id/inventory")
 		inventory.Use(middleware.RequirePermission("manage_inventory"))
@@ -195,12 +192,23 @@ func SetupRouter(
 		}
 
 		// ----- Staff Management -----
+		// GET  /staff/list   — owner + manager (view_staff)
+		// POST /staff/create — owner only      (manage_staff)
+		// DEL  /staff/:id   — owner only       (manage_staff)
 		staff := protected.Group("/staff")
-		staff.Use(middleware.RequirePermission("manage_staff"))
 		{
-			staff.POST("/create", staffHandler.CreateStaff)
-			staff.GET("/list", staffHandler.GetStaff)
-			staff.DELETE("/:id", staffHandler.DeleteStaff)
+			staff.GET("/list",
+				middleware.RequirePermission("view_staff"),
+				staffHandler.GetStaff,
+			)
+			staff.POST("/create",
+				middleware.RequirePermission("manage_staff"),
+				staffHandler.CreateStaff,
+			)
+			staff.DELETE("/:id",
+				middleware.RequirePermission("manage_staff"),
+				staffHandler.DeleteStaff,
+			)
 		}
 
 		// ----- Owner — Branches & Tables -----

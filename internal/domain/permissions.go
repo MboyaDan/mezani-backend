@@ -3,8 +3,9 @@ package domain
 var RolePermissions = map[Role][]string{
 
 	RoleOwner: {
-		"manage_branches",
+		"view_staff",
 		"manage_staff",
+		"manage_branches",
 		"manage_menu",
 		"view_reports",
 		"manage_tables",
@@ -16,12 +17,15 @@ var RolePermissions = map[Role][]string{
 	},
 
 	RoleManager: {
+		"view_staff",
 		"manage_menu",
 		"view_reports",
 		"manage_tables",
-		//"manage_staff",
-		// Managers can view staff but not manage th
 		"manage_inventory",
+		"create_orders",
+		"update_order_status",
+		"view_kitchen_display",
+		"close_bill",
 	},
 
 	RoleWaiter: {
