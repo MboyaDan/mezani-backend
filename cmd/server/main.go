@@ -16,6 +16,7 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"mezzani_backend/internal/ai"
 	"mezzani_backend/internal/cache"
 	"mezzani_backend/internal/config"
 	"mezzani_backend/internal/database"
@@ -75,6 +76,7 @@ func main() {
 	// ================= REDIS =================
 	redisClient := database.NewRedisClient(cfg.RedisURL)
 	eventBus := notifications.NewEventBus(redisClient)
+	aiClient := ai.NewClient(cfg.GroqAPIKey, cfg.GroqModel, logger)
 
 	// ================= CACHE =================
 	appCache := cache.NewCache(redisClient)
@@ -113,6 +115,7 @@ func main() {
 	analyticsService := service.NewAnalyticsService(queries)
 	passwordResetService := service.NewPasswordResetService(queries, redisClient, emailSender, cfg.FrontendURL)
 	staffService := service.NewStaffService(queries)
+	aiService := service.NewAIService(queries, redisClient, aiClient, logger)
 
 	orderService := service.NewOrderService(
 		queries,
@@ -142,6 +145,8 @@ func main() {
 	inventoryHandler := handler.NewInventoryHandler(inventoryService)
 	wsHandler := handler.NewWSHandler(hub)
 	passwordResetHandler := handler.NewPasswordResetHandler(passwordResetService)
+	aiHandler := handler.NewAIHandler(aiService)
+
 
 	// ================= ROUTER =================
 	r := router.SetupRouter(
@@ -164,6 +169,7 @@ func main() {
 		branchHandler,
 		inventoryHandler,
 		passwordResetHandler,
+		aiHandler,
 	)
 
 	// ================= SERVER =================

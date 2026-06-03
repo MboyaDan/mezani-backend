@@ -12,6 +12,187 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const getAIBranchContext = `-- name: GetAIBranchContext :one
+SELECT
+    COUNT(DISTINCT o.id)                                            AS total_orders,
+    COUNT(DISTINCT ts.id)                                           AS total_sessions,
+    COALESCE(SUM(
+        (SELECT SUM(mi.price * oi.quantity)
+         FROM order_items oi
+         JOIN menu_items mi ON mi.id = oi.menu_item_id
+         WHERE oi.order_id = o.id)
+    ), 0)                                                           AS total_revenue,
+    COUNT(DISTINCT CASE WHEN o.status = 'pending'   THEN o.id END) AS pending_orders,
+    COUNT(DISTINCT CASE WHEN o.status = 'preparing' THEN o.id END) AS preparing_orders,
+    COUNT(DISTINCT CASE WHEN o.status = 'ready'     THEN o.id END) AS ready_orders
+FROM orders o
+JOIN table_sessions ts ON ts.id = o.table_session_id
+JOIN tables t          ON t.id  = ts.table_id
+WHERE t.branch_id  = $1
+  AND o.created_at >= NOW() - INTERVAL '7 days'
+`
+
+type GetAIBranchContextRow struct {
+	TotalOrders     int64
+	TotalSessions   int64
+	TotalRevenue    interface{}
+	PendingOrders   int64
+	PreparingOrders int64
+	ReadyOrders     int64
+}
+
+func (q *Queries) GetAIBranchContext(ctx context.Context, branchID uuid.UUID) (GetAIBranchContextRow, error) {
+	row := q.db.QueryRow(ctx, getAIBranchContext, branchID)
+	var i GetAIBranchContextRow
+	err := row.Scan(
+		&i.TotalOrders,
+		&i.TotalSessions,
+		&i.TotalRevenue,
+		&i.PendingOrders,
+		&i.PreparingOrders,
+		&i.ReadyOrders,
+	)
+	return i, err
+}
+
+const getAILowStockItems = `-- name: GetAILowStockItems :many
+SELECT name, stock, threshold
+FROM inventory_items
+WHERE branch_id = $1
+  AND stock <= threshold
+ORDER BY stock ASC
+LIMIT 10
+`
+
+type GetAILowStockItemsRow struct {
+	Name      string
+	Stock     int32
+	Threshold int32
+}
+
+func (q *Queries) GetAILowStockItems(ctx context.Context, branchID uuid.UUID) ([]GetAILowStockItemsRow, error) {
+	rows, err := q.db.Query(ctx, getAILowStockItems, branchID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetAILowStockItemsRow
+	for rows.Next() {
+		var i GetAILowStockItemsRow
+		if err := rows.Scan(&i.Name, &i.Stock, &i.Threshold); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getAIPeakHours = `-- name: GetAIPeakHours :many
+SELECT
+    EXTRACT(HOUR FROM o.created_at)::int AS hour,
+    COUNT(*)::int                         AS order_count
+FROM orders o
+JOIN table_sessions ts ON ts.id = o.table_session_id
+JOIN tables t          ON t.id  = ts.table_id
+WHERE t.branch_id  = $1
+  AND o.status IN ('paid', 'served')
+  AND o.created_at >= NOW() - INTERVAL '7 days'
+GROUP BY hour
+ORDER BY order_count DESC
+LIMIT 3
+`
+
+type GetAIPeakHoursRow struct {
+	Hour       int32
+	OrderCount int32
+}
+
+func (q *Queries) GetAIPeakHours(ctx context.Context, branchID uuid.UUID) ([]GetAIPeakHoursRow, error) {
+	rows, err := q.db.Query(ctx, getAIPeakHours, branchID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetAIPeakHoursRow
+	for rows.Next() {
+		var i GetAIPeakHoursRow
+		if err := rows.Scan(&i.Hour, &i.OrderCount); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getAIStaffCount = `-- name: GetAIStaffCount :one
+SELECT COUNT(*)::int AS count
+FROM staff_users
+WHERE tenant_id = $1
+  AND (branch_id = $2 OR branch_id IS NULL)
+`
+
+type GetAIStaffCountParams struct {
+	TenantID uuid.UUID
+	BranchID pgtype.UUID
+}
+
+func (q *Queries) GetAIStaffCount(ctx context.Context, arg GetAIStaffCountParams) (int32, error) {
+	row := q.db.QueryRow(ctx, getAIStaffCount, arg.TenantID, arg.BranchID)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}
+
+const getAITopItems = `-- name: GetAITopItems :many
+SELECT
+    mi.name,
+    SUM(oi.quantity)::int           AS total_sold,
+    SUM(mi.price * oi.quantity)     AS revenue
+FROM order_items oi
+JOIN menu_items mi     ON mi.id = oi.menu_item_id
+JOIN orders o          ON o.id  = oi.order_id
+JOIN table_sessions ts ON ts.id = o.table_session_id
+JOIN tables t          ON t.id  = ts.table_id
+WHERE t.branch_id  = $1
+  AND o.status IN ('paid', 'served')
+  AND o.created_at >= NOW() - INTERVAL '7 days'
+GROUP BY mi.name
+ORDER BY total_sold DESC
+LIMIT 5
+`
+
+type GetAITopItemsRow struct {
+	Name      string
+	TotalSold int32
+	Revenue   int64
+}
+
+func (q *Queries) GetAITopItems(ctx context.Context, branchID uuid.UUID) ([]GetAITopItemsRow, error) {
+	rows, err := q.db.Query(ctx, getAITopItems, branchID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetAITopItemsRow
+	for rows.Next() {
+		var i GetAITopItemsRow
+		if err := rows.Scan(&i.Name, &i.TotalSold, &i.Revenue); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getDailySales = `-- name: GetDailySales :one
 SELECT
     COALESCE(SUM(mi.price * oi.quantity), 0) AS total_sales
@@ -42,7 +223,7 @@ FROM orders o
 JOIN table_sessions ts ON o.table_session_id = ts.id
 JOIN tables t ON ts.table_id = t.id
 WHERE t.branch_id = $1
-AND o.status IN ('paid', 'served')      -- exclude pending/cancelled
+AND o.status IN ('paid', 'served')
 GROUP BY hour
 ORDER BY order_count DESC
 `
@@ -83,7 +264,7 @@ JOIN menu_items mi ON oi.menu_item_id = mi.id
 JOIN table_sessions ts ON o.table_session_id = ts.id
 JOIN tables t ON ts.table_id = t.id
 WHERE t.branch_id = $1
-AND o.status IN ('paid', 'served')      -- exclude pending/cancelled
+AND o.status IN ('paid', 'served')
 GROUP BY mi.name
 ORDER BY total_sold DESC
 LIMIT 5
@@ -122,7 +303,7 @@ SELECT COUNT(*) FROM (
     JOIN table_sessions ts ON o.table_session_id = ts.id
     JOIN tables t ON ts.table_id = t.id
     WHERE t.branch_id = $1
-    AND o.status IN ('paid', 'served')  -- only count real completed visits
+    AND o.status IN ('paid', 'served')
     GROUP BY o.customer_session_id
     HAVING COUNT(*) > 1
 ) AS returning_customers

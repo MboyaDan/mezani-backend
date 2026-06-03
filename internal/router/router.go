@@ -35,6 +35,7 @@ func SetupRouter(
 	branchHandler *handler.BranchHandler,
 	inventoryHandler *handler.InventoryHandler,
 	passwordResetHandler *handler.PasswordResetHandler,
+	aiHandler *handler.AIHandler,
 ) *gin.Engine {
 
 	r := gin.New()
@@ -189,6 +190,13 @@ func SetupRouter(
 		reports.Use(middleware.RequirePermission("view_reports"))
 		{
 			reports.GET("/analytics/dashboard", analyticsHandler.Dashboard)
+		}
+
+		// ----- AI Assistant (owner + manager via view_reports) -----
+		ai := protected.Group("/ai")
+		ai.Use(middleware.RequirePermission("view_reports"))
+		{
+			ai.POST("/chat", aiHandler.Chat)
 		}
 
 		// ----- Staff Management -----

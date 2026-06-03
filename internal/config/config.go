@@ -21,6 +21,8 @@ type Config struct {
 	FrontendURL      string
 	TelegramBotToken string
 	TelegramChatID   string
+	GroqAPIKey       string
+	GroqModel        string
 }
 
 func LoadConfig() *Config {
@@ -49,6 +51,8 @@ func LoadConfig() *Config {
 
 		TelegramBotToken: viper.GetString("TELEGRAM_BOT_TOKEN"),
 		TelegramChatID:   viper.GetString("TELEGRAM_CHAT_ID"),
+		GroqAPIKey:       viper.GetString("GROQ_API_KEY"),
+		GroqModel:        viper.GetString("GROQ_MODEL"),
 	}
 	if config.DatabaseURL == "" {
 		log.Fatal("DATABASE_URL is required")
