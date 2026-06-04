@@ -15,7 +15,9 @@
 - [Database](#database)
 - [API Reference](#api-reference)
 - [Authentication & Authorization](#authentication--authorization)
+- [Trial System](#trial-system)
 - [Real-Time (WebSocket)](#real-time-websocket)
+- [AI Analytics Assistant](#ai-analytics-assistant)
 - [Background Workers](#background-workers)
 - [Notifications](#notifications)
 - [Caching](#caching)
@@ -57,6 +59,7 @@ Each restaurant is a **tenant** with fully isolated data. Branches, menus, staff
 | Email | Resend API |
 | WhatsApp | Meta Cloud API |
 | Alerts | Telegram Bot API |
+| AI / LLM | Groq API (llama-3.3-70b-versatile) |
 | Containerisation | Docker + Docker Compose |
 | Logging | Go slog (structured) |
 
@@ -131,6 +134,9 @@ mezzani_backend/
 │   │   ├── roles.go      # Role constants + permission maps
 │   │   └── order_status.go # Order state machine
 │   ├── handler/          # HTTP handlers (one file per resource)
+│   ├── ai/               # AI analytics assistant
+│   │   ├── context_builder.go  # Aggregates branch data into token-efficient summary
+│   │   └── llm.go              # Groq API client (OpenAI-compatible)
 │   ├── middleware/        # Gin middleware
 │   │   ├── auth.go       # JWT validation
 │   │   ├── permission.go # RBAC enforcement
@@ -224,6 +230,8 @@ curl http://localhost:8080/health
 | `FRONTEND_URL` | ✅ | Frontend URL (used in password reset links) |
 | `TELEGRAM_BOT_TOKEN` | ✅ | Telegram bot token for alerts |
 | `TELEGRAM_CHAT_ID` | ✅ | Telegram chat ID for alert delivery |
+| `GROQ_API_KEY` | ✅ | Groq API key for AI assistant (`gsk_...`) |
+| `GROQ_MODEL` | ✅ | Groq model name (default: `llama-3.3-70b-versatile`) |
 
 ### Example `.env`
 
@@ -247,6 +255,9 @@ FRONTEND_URL=http://localhost:3000
 
 TELEGRAM_BOT_TOKEN=your_bot_token
 TELEGRAM_CHAT_ID=your_chat_id
+
+GROQ_API_KEY=gsk_xxxxxxxxxxxxxxxxxxxxxx
+GROQ_MODEL=llama-3.3-70b-versatile
 ```
 
 ---
@@ -434,6 +445,12 @@ Authorization: Bearer <access_token>
 |---|---|---|---|
 | `GET` | `/reports/analytics/dashboard` | `view_reports` | Dashboard analytics |
 
+#### AI Assistant
+
+| Method | Endpoint | Permission | Description |
+|---|---|---|---|
+| `POST` | `/ai/chat` | `view_reports` | Chat with Zuri AI assistant |
+
 ---
 
 ### Request / Response Examples
@@ -527,10 +544,10 @@ Access tokens are signed with HMAC-SHA256 and contain:
 |---|---|
 | `uid` | Staff user ID |
 | `tid` | Tenant (restaurant) ID — used for data isolation |
-| `tname` | Restaurant name |
-| `bid` | Branch ID (empty for owners) |
+| `tname` | Restaurant name — injected from tenants table at login, no extra API call needed |
+| `bid` | Branch ID (empty string for owners — they select branch in the dashboard UI) |
 | `role` | Staff role |
-| `tca` | Tenant created_at (unix) — used for trial calculation |
+| `tca` | Tenant `created_at` as Unix timestamp — used for trial expiry calculation on the frontend |
 | `plan` | Subscription plan (`tier1`, `tier2`, `tier3`) |
 
 ### Token Lifecycle
@@ -568,6 +585,46 @@ On logout
 ### Tenant Isolation
 
 Every database query that touches branch-level data is scoped by `tenant_id` extracted from the JWT. The `TenantBranchGuard` middleware validates that the `branch_id` in the URL belongs to the requesting tenant before the handler runs.
+
+---
+
+## Trial System
+
+Mezzani uses a **14-day free trial** system. The trial start date is derived from `tenant.created_at`, which is embedded in the JWT as the `tca` (tenant created at) Unix timestamp claim. No separate trial table is needed.
+
+### How it works
+
+```
+Tenant registers
+  → tenant.created_at recorded in PostgreSQL
+  → tca injected into every JWT at login
+
+Frontend receives JWT
+  → Decodes tca claim
+  → Calculates daysLeft = 14 - daysSince(tca)
+  → Shows TrialBanner when daysLeft <= 7
+  → Shows red banner when daysLeft <= 3
+  → Blocks dashboard when daysLeft == 0
+```
+
+### Trial states
+
+| Days Left | Frontend Behaviour |
+|---|---|
+| 14 → 8 | No banner shown |
+| 7 → 4 | Amber banner — dismissible once per 24 hours |
+| 3 → 1 | Red banner — not dismissible |
+| 0 | Dashboard blocked — `TrialExpiredGuard` renders upgrade screen |
+
+### Plan values
+
+| Plan | Description |
+|---|---|
+| `tier1` | Starter — single location |
+| `tier2` | Pro — analytics, WhatsApp alerts, staff management |
+| `tier3` | Enterprise — multi-branch, inventory, API access |
+
+When a tenant upgrades (future Paystack integration), the `plan` field in the `tenants` table is updated and a new JWT is issued, causing the trial banner to disappear immediately.
 
 ---
 
@@ -618,6 +675,131 @@ Customer submits order
   → Hub.Broadcast to all connected WebSocket clients
   → Kitchen screen updates in real time
 ```
+
+---
+
+## AI Analytics Assistant
+
+Mezzani includes **Zuri** — an AI-powered analytics assistant that answers natural language questions about restaurant operations using real-time branch data.
+
+### Architecture
+
+```
+POST /api/ai/chat
+  → AIHandler extracts tenant_id + branch_id from JWT
+  → AIService.Chat()
+      → Rate limit check (Redis counter, 20 req/hour/tenant)
+      → BuildBranchContext() — aggregates 5 DB queries into ~400 token summary
+      → Redis cache check (SHA256 key of tenant+branch+message, 5 min TTL)
+      → Load conversation history (Redis, 2h TTL, last 5 turns)
+      → Groq API call (llama-3.3-70b-versatile)
+      → Cache response
+      → Log request (tenant_id, branch_id, user_id, tokens_used)
+      → Return response
+```
+
+### Tenant & Branch Isolation
+
+Every AI request is fully isolated:
+
+- `tenant_id` and `branch_id` are extracted from the **JWT** — never from the request body
+- All 5 database queries in `BuildBranchContext` are scoped by `branch_id`
+- Cross-tenant data access is architecturally impossible
+- System prompt explicitly instructs the model to never reveal infrastructure details
+
+### Branch Context
+
+Before calling the LLM, `BuildBranchContext` aggregates data into a compact summary (target: ~400 tokens):
+
+```
+RESTAURANT: Mama Njeri Kitchen
+DATA PERIOD: Last 7 days (as of 2026-04-21 10:00)
+
+ORDER SUMMARY:
+- Total orders: 63
+- Total revenue: KES 47,850
+- Currently pending: 2 | preparing: 1 | ready: 0
+
+TOP SELLING ITEMS:
+1. Nyama Choma — 45 sold, KES 22,500 revenue
+2. Chicken Pilau — 38 sold, KES 15,200 revenue
+
+PEAK HOURS:
+- 12:00 — 14 orders
+- 19:00 — 12 orders
+
+LOW STOCK ALERTS:
+- Beef: 3 remaining (threshold: 10)
+
+STAFF: 6 members at this branch
+```
+
+This structured summarisation approach minimises token usage while giving the model enough context to answer operational questions accurately.
+
+### Caching Strategy
+
+| Cache Key | TTL | Purpose |
+|---|---|---|
+| `ai:context:<branch_id>` | 2 min | Branch data summary — avoids repeated DB aggregation |
+| `ai:response:<sha256(tid+bid+msg)>` | 5 min | Identical questions return instantly |
+| `ai:conversation:<session_id>` | 2 hours | Last 5 conversation turns for follow-up questions |
+| `ai:ratelimit:<tenant_id>` | 1 hour | Rolling request counter (resets hourly) |
+
+### Rate Limiting
+
+- **20 requests per tenant per hour** — enforced via Redis INCR + EXPIRE
+- Applies at the tenant level, not per-user — prevents abuse from any staff member
+- Returns HTTP 429 with a clear error message when exceeded
+
+### Request / Response Example
+
+```bash
+POST /api/ai/chat?branch_id=uuid
+Authorization: Bearer <jwt_token>
+Content-Type: application/json
+
+{
+  "message": "What are my peak hours and what should I prepare for?",
+  "session_id": "optional-uuid-for-conversation-memory"
+}
+```
+
+```json
+{
+  "response": "Your busiest times are 12:00 PM (14 orders) and 7:00 PM (12 orders). Nyama Choma is your top seller — prep extra portions before the noon rush. Also, beef stock is critically low at 3 units (threshold: 10), so restock urgently before the lunch service.",
+  "tokens_used": 312,
+  "from_cache": false,
+  "context_summary": {
+    "total_orders": 63,
+    "total_revenue": 47850,
+    "top_item": "Nyama Choma",
+    "low_stock_count": 2,
+    "source": "fresh"
+  }
+}
+```
+
+### LLM Provider
+
+Mezzani uses **Groq** as the LLM provider:
+
+| Property | Value |
+|---|---|
+| Provider | Groq (`api.groq.com`) |
+| Model | `llama-3.3-70b-versatile` |
+| API Compatibility | OpenAI-compatible (same request/response schema) |
+| Free tier | 14,400 requests/day |
+| Max tokens (response) | 400 (enforced in request) |
+| Temperature | 0.4 (factual, low creativity) |
+
+Groq was chosen over Google Gemini because it is OpenAI-compatible (minimal code changes), significantly faster (LPU hardware), and has a more generous free tier. Switching to a different provider requires only changing the base URL and model name in `internal/ai/llm.go`.
+
+### Input Sanitisation
+
+- User messages truncated to **500 characters** maximum
+- Prompt injection mitigated via system prompt constraints
+- Model instructed never to reveal tenant IDs, infrastructure details, or system internals
+- All inputs logged with `tenant_id` and `user_id` for audit trail
 
 ---
 
@@ -687,7 +869,11 @@ Alert levels:
 
 ## Caching
 
-Menu data is cached in Redis to reduce database load. Cache is invalidated on write operations.
+Redis is used for two categories of caching: menu data and AI responses.
+
+### Menu Cache
+
+Menu data is cached to reduce database load on high-frequency QR scan reads. Cache is invalidated on write operations.
 
 | Cache Key Pattern | TTL | Invalidated On |
 |---|---|---|
@@ -697,6 +883,10 @@ Menu data is cached in Redis to reduce database load. Cache is invalidated on wr
 | `menu:items:<category_id>` | 10 min | Item created/updated |
 
 Cache operations use `cache.DeleteByPattern("menu:*")` on writes that affect multiple keys.
+
+### AI Cache
+
+See the [AI Analytics Assistant — Caching Strategy](#caching-strategy) section for the full AI cache key reference.
 
 ---
 
@@ -780,6 +970,8 @@ Before deploying to production:
 - [ ] Configure a custom domain for the Resend sender email
 - [ ] Set up a reverse proxy (Nginx/Caddy) with SSL termination
 - [ ] Enable database backups
+- [ ] Set `GROQ_API_KEY` with a production Groq API key
+- [ ] Verify AI rate limits are appropriate for your expected traffic
 
 ### Health Check
 
