@@ -64,11 +64,27 @@ func main() {
 	}
 
 	// ================= DATABASE =================
-	dbpool, err := pgxpool.New(ctx, cfg.DatabaseURL)
+	poolConfig, err := pgxpool.ParseConfig(cfg.DatabaseURL)
+	if err != nil {
+		logger.Error("invalid database configuration", "error", err)
+		os.Exit(1)
+	}
+
+	poolConfig.MaxConns = 10
+	poolConfig.MinConns = 2
+	poolConfig.MaxConnIdleTime = 5 * time.Minute
+
+	dbpool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 	if err != nil {
 		logger.Error("failed to connect to database", "error", err)
 		os.Exit(1)
 	}
+
+	if err := dbpool.Ping(ctx); err != nil {
+		logger.Error("database ping failed", "error", err)
+		os.Exit(1)
+	}
+
 	defer dbpool.Close()
 
 	queries := db.New(dbpool)
@@ -146,7 +162,6 @@ func main() {
 	wsHandler := handler.NewWSHandler(hub)
 	passwordResetHandler := handler.NewPasswordResetHandler(passwordResetService)
 	aiHandler := handler.NewAIHandler(aiService)
-
 
 	// ================= ROUTER =================
 	r := router.SetupRouter(

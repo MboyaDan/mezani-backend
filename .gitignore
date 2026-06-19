@@ -29,3 +29,5 @@ coverage.out
 
 # Docker (optional)
 docker-compose.override.yml
+
+mezzani_backend
