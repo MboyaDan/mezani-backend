@@ -8,9 +8,11 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
+	"github.com/bytedance/gopkg/util/logger"
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
@@ -47,6 +49,12 @@ func main() {
 
 	// ================= CONFIG =================
 	cfg := config.LoadConfig()
+
+	logger.Info("config check",
+		"db_url_len", len(cfg.DatabaseURL),
+		"db_url_prefix", cfg.DatabaseURL[:min(20, len(cfg.DatabaseURL))],
+		"db_url_has_quotes", strings.Contains(cfg.DatabaseURL, `"`) || strings.Contains(cfg.DatabaseURL, "'"),
+	)
 
 	// ================= LOGGING =================
 	// Constructed first so every service and subsystem gets the same logger.
