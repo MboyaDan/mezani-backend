@@ -23,3 +23,6 @@ func (s *StaffService) GetStaffByBranch(ctx context.Context, branchID uuid.UUID)
 func (s *StaffService) DeleteStaff(ctx context.Context, staffID uuid.UUID) error {
 	return s.Queries.DeleteStaffUser(ctx, staffID)
 }
+func (s *StaffService) GetByID(ctx context.Context, staffID uuid.UUID) (db.StaffUser, error) {
+	return s.Queries.GetStaffByID(ctx, staffID)
+}

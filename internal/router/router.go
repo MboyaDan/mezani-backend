@@ -199,6 +199,8 @@ func SetupRouter(
 			ai.POST("/chat", aiHandler.Chat)
 		}
 
+		protected.GET("/me", staffHandler.Me)
+
 		// ----- Staff Management -----
 		// GET  /staff/list   — owner + manager (view_staff)
 		// POST /staff/create — owner only      (manage_staff)

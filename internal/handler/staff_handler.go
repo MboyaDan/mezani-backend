@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"database/sql"
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -120,4 +122,46 @@ func (h *StaffHandler) DeleteStaff(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "staff deleted"})
+}
+
+type MeResponse struct {
+	ID       string `json:"id"`
+	TenantID string `json:"tenant_id"`
+	BranchID string `json:"branch_id,omitempty"`
+	Name     string `json:"name"`
+	Email    string `json:"email"`
+	Role     string `json:"role"`
+}
+
+func (h *StaffHandler) Me(c *gin.Context) {
+	userIDStr, _ := c.Get("user_id")
+	userID, err := uuid.Parse(userIDStr.(string))
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid user_id in token"})
+		return
+	}
+
+	staff, err := h.StaffService.GetByID(c.Request.Context(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "staff not found"})
+			return
+		}
+		c.Error(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "unable to fetch staff"})
+		return
+	}
+
+	resp := MeResponse{
+		ID:       staff.ID.String(),
+		TenantID: staff.TenantID.String(),
+		Name:     staff.Name,
+		Email:    staff.Email,
+		Role:     staff.Role,
+	}
+	if staff.BranchID.Valid {
+		resp.BranchID = uuid.UUID(staff.BranchID.Bytes).String()
+	}
+
+	c.JSON(http.StatusOK, resp)
 }
