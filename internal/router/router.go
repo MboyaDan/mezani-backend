@@ -40,6 +40,11 @@ func SetupRouter(
 
 	r := gin.New()
 
+	// ========== HEALTH CHECK (no middleware, no auth) ==========
+	r.GET("/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{"status": "ok"})
+	})
+
 	// ========== GLOBAL MIDDLEWARE ==========
 	r.Use(middleware.RecoveryWithAlerts(alerts))
 	r.Use(middleware.Logger())
