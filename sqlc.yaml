@@ -102,6 +102,34 @@ sql:
               import: "github.com/google/uuid"
               type: "UUID"
 
+        # === PAYMENTS OVERRIDES ===
+          - column: "payments.branch_id"
+            go_type:
+              import: "github.com/google/uuid"
+              type: "UUID"
+          - column: "payments.initiated_by"     # nullable - customer-initiated cash has no staff row
+            go_type:
+              import: "github.com/jackc/pgx/v5/pgtype"
+              type: "UUID"
+            nullable: true
+          - column: "payments.confirmed_by"     # nullable - not set until a cashier confirms
+            go_type:
+              import: "github.com/jackc/pgx/v5/pgtype"
+              type: "UUID"
+            nullable: true
+          - column: "payments.confirmed_at"
+            go_type:
+              import: "github.com/jackc/pgx/v5/pgtype"
+              type: "Timestamp"
+            nullable: true
+          - column: "payments.mpesa_receipt"
+            go_type:
+              import: "github.com/jackc/pgx/v5/pgtype"
+              type: "Text"
+            nullable: true
+          - column: "payments.amount"
+            go_type: "float64"
+
           # === STAFF ACTIVITIES OVERRIDES ===
           - column: "staff_activities.staff_id"
             go_type:

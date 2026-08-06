@@ -273,12 +273,13 @@ func staffFromContext(ctx context.Context) (staffID uuid.UUID, branchID uuid.UUI
 }
 
 type OrderWithItems struct {
-	ID          string      `json:"id"`
-	TableNumber int32       `json:"table_number"`
-	Status      string      `json:"status"`
-	CreatedAt   time.Time   `json:"created_at"`
-	Items       []OrderItem `json:"items"`
-	Total       float64     `json:"total"`
+	ID             string      `json:"id"`
+	TableSessionID string      `json:"table_session_id"`
+	TableNumber    int32       `json:"table_number"`
+	Status         string      `json:"status"`
+	CreatedAt      time.Time   `json:"created_at"`
+	Items          []OrderItem `json:"items"`
+	Total          float64     `json:"total"`
 }
 
 type OrderItem struct {
@@ -312,12 +313,13 @@ func (s *OrderService) GetRecentOrders(ctx context.Context, branchID uuid.UUID) 
 		}
 
 		result = append(result, OrderWithItems{
-			ID:          o.ID.String(),
-			TableNumber: o.TableNumber,
-			Status:      o.Status,
-			CreatedAt:   o.CreatedAt,
-			Items:       orderItems,
-			Total:       total,
+			ID:             o.ID.String(),
+			TableSessionID: o.TableSessionID.String(),
+			TableNumber:    o.TableNumber,
+			Status:         o.Status,
+			CreatedAt:      o.CreatedAt,
+			Items:          orderItems,
+			Total:          total,
 		})
 	}
 	return result, nil

@@ -14,6 +14,9 @@ var RolePermissions = map[Role][]string{
 		"update_order_status",
 		"view_kitchen_display",
 		"close_bill",
+		"initiate_payment",
+		"confirm_payment",
+		"view_payments",
 	},
 
 	RoleManager: {
@@ -26,11 +29,15 @@ var RolePermissions = map[Role][]string{
 		"update_order_status",
 		"view_kitchen_display",
 		"close_bill",
+		"initiate_payment",
+		"confirm_payment",
+		"view_payments",
 	},
 
 	RoleWaiter: {
 		"create_orders",
 		"view_menu",
+		"initiate_payment",
 	},
 
 	RoleKitchen: {
@@ -41,5 +48,13 @@ var RolePermissions = map[Role][]string{
 	RoleCashier: {
 		"view_orders",
 		"close_bill",
+		"initiate_payment",
+		"confirm_payment",
+		"view_payments",
+	},
+
+	RoleSuperAdmin: {
+		"view_platform_analytics",
+		"manage_tenants",
 	},
 }

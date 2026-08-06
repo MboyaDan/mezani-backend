@@ -158,6 +158,48 @@ CREATE TABLE order_items (
 );
 
 -- ============================================================
+-- PAYMENTS
+-- ============================================================
+CREATE TABLE payments (
+    id                UUID PRIMARY KEY,
+    tenant_id         UUID NOT NULL REFERENCES tenants(id),
+    branch_id         UUID NOT NULL REFERENCES branches(id),
+    table_session_id  UUID NOT NULL REFERENCES table_sessions(id),
+    method            TEXT NOT NULL,
+    status            TEXT NOT NULL DEFAULT 'pending',
+    amount            NUMERIC NOT NULL,
+    mpesa_receipt     TEXT,
+    initiated_by      UUID REFERENCES staff_users(id),
+    confirmed_by      UUID REFERENCES staff_users(id),
+    created_at        TIMESTAMP DEFAULT NOW(),
+    confirmed_at      TIMESTAMP,
+    CONSTRAINT payments_method_check CHECK (method IN ('cash', 'mpesa')),
+    CONSTRAINT payments_status_check CHECK (status IN ('pending', 'confirmed', 'failed', 'cancelled')),
+    CONSTRAINT payments_amount_check CHECK (
+        amount > 0
+        AND amount NOT IN (
+            'NaN'::numeric,
+            'Infinity'::numeric,
+            '-Infinity'::numeric
+        )
+    )
+);
+
+CREATE UNIQUE INDEX one_pending_payment_per_session
+    ON payments (table_session_id)
+    WHERE status = 'pending';
+-- ============================================================
+-- PLATFORM ADMINS
+-- ============================================================
+CREATE TABLE platform_admins (
+    id            UUID PRIMARY KEY,
+    name          TEXT NOT NULL,
+    email         TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    created_at    TIMESTAMP DEFAULT NOW()
+);
+
+-- ============================================================
 -- STAFF ACTIVITY LOG
 -- ============================================================
 CREATE TABLE staff_activities (
@@ -225,3 +267,10 @@ CREATE INDEX idx_menu_categories_menu_id  ON menu_categories (menu_id);
 
 -- Menu items: queried by category_id
 CREATE INDEX idx_menu_items_category_id   ON menu_items (category_id);
+
+-- Payments: queried by table_session_id, tenant_id, branch_id, status
+CREATE INDEX idx_payments_table_session_id ON payments (table_session_id);
+CREATE INDEX idx_payments_tenant_id        ON payments (tenant_id);
+CREATE INDEX idx_payments_branch_id        ON payments (branch_id);
+CREATE INDEX idx_payments_status           ON payments (status);
+CREATE INDEX idx_payments_created_at       ON payments (created_at DESC); 

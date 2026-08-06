@@ -29,6 +29,7 @@ func SetupRouter(
 	wsHandler *handler.WSHandler,
 	menuHandler *handler.MenuHandler,
 	billingHandler *handler.BillingHandler,
+	paymentHandler *handler.PaymentHandler,
 	analyticsHandler *handler.AnalyticsHandler,
 	staffHandler *handler.StaffHandler,
 	tableHandler *handler.TableHandler,
@@ -36,6 +37,7 @@ func SetupRouter(
 	inventoryHandler *handler.InventoryHandler,
 	passwordResetHandler *handler.PasswordResetHandler,
 	aiHandler *handler.AIHandler,
+
 ) *gin.Engine {
 
 	r := gin.New()
@@ -160,6 +162,26 @@ func SetupRouter(
 			)
 		}
 
+		// ----- Payments -----
+		payments := protected.Group("/payments")
+		{
+			payments.POST("/cash",
+				middleware.RequirePermission("initiate_payment"),
+				paymentHandler.InitiateCash,
+			)
+			payments.POST("/confirm",
+				middleware.RequirePermission("confirm_payment"),
+				paymentHandler.Confirm,
+			)
+			payments.GET("/pending/:branch_id",
+				middleware.RequirePermission("view_payments"),
+				middleware.TenantBranchGuard("branch_id", func(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
+					branch, err := branchService.GetBranchByID(ctx, id)
+					return branch.TenantID, err
+				}),
+				paymentHandler.Pending,
+			)
+		}
 		// ----- Menu Management -----
 		menu := protected.Group("/menu")
 		menu.Use(middleware.RequirePermission("manage_menu"))

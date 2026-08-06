@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"net/http"
 	"strings"
 
@@ -44,6 +45,24 @@ func AuthMiddleware(jwtKey []byte) gin.HandlerFunc {
 		c.Set("tenant_name", claims.TenantName)
 		c.Set("role", claims.Role)
 		c.Set("branch_id", claims.BranchID)
+
+		// c.Set only stores these on the gin.Context (c.Keys), which is a
+		// different object from c.Request.Context(). Handlers pass
+		// c.Request.Context() straight into services (see order_handler.go,
+		// billing_handler.go, etc.), and helpers like staffFromContext read
+		// via ctx.Value(...) on THAT context — so without this bridge, every
+		// ctx.Value("user_id") / ctx.Value("branch_id") lookup downstream
+		// silently returned nothing, and staffFromContext fell back to
+		// uuid.Nil. This was already happening before payments/activity
+		// logging existed; it just had no visible symptom because null
+		// staff_id/confirmed_by are allowed by the schema.
+		reqCtx := c.Request.Context()
+		reqCtx = context.WithValue(reqCtx, "user_id", claims.UserID)
+		reqCtx = context.WithValue(reqCtx, "tenant_id", claims.TenantID)
+		reqCtx = context.WithValue(reqCtx, "tenant_name", claims.TenantName)
+		reqCtx = context.WithValue(reqCtx, "role", claims.Role)
+		reqCtx = context.WithValue(reqCtx, "branch_id", claims.BranchID)
+		c.Request = c.Request.WithContext(reqCtx)
 
 		c.Next()
 	}

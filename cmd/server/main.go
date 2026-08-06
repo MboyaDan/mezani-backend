@@ -147,12 +147,20 @@ func main() {
 		activityService,
 		inventoryService,
 	)
-
 	billingService := service.NewBillingService(
 		queries,
 		eventBus,
 		activityService,
 	)
+
+	paymentService := service.NewPaymentService(
+		queries,
+		billingService,
+		eventBus,
+		activityService,
+	)
+
+	// ================= HANDLERS =================
 
 	// ================= HANDLERS =================
 	authHandler := handler.NewAuthHandler(authService)
@@ -165,6 +173,7 @@ func main() {
 	analyticsHandler := handler.NewAnalyticsHandler(analyticsService)
 	orderHandler := handler.NewOrderHandler(orderService)
 	billingHandler := handler.NewBillingHandler(billingService)
+	paymentHandler := handler.NewPaymentHandler(paymentService)
 	staffHandler := handler.NewStaffHandler(authService, staffService)
 	inventoryHandler := handler.NewInventoryHandler(inventoryService)
 	wsHandler := handler.NewWSHandler(hub)
@@ -177,7 +186,6 @@ func main() {
 		cfg.AllowedOrigins,
 		branchService,
 		alertService,
-
 		authHandler,
 		tableSessionHandler,
 		customerHandler,
@@ -186,6 +194,7 @@ func main() {
 		wsHandler,
 		menuHandler,
 		billingHandler,
+		paymentHandler,
 		analyticsHandler,
 		staffHandler,
 		tableHandler,
