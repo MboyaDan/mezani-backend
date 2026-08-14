@@ -37,7 +37,7 @@ func SetupRouter(
 	inventoryHandler *handler.InventoryHandler,
 	passwordResetHandler *handler.PasswordResetHandler,
 	aiHandler *handler.AIHandler,
-
+	superAdminHandler *handler.SuperAdminHandler,
 ) *gin.Engine {
 
 	r := gin.New()
@@ -88,6 +88,14 @@ func SetupRouter(
 		public.POST("/auth/reset-password",
 			middleware.StrictRateLimit(),
 			passwordResetHandler.ResetPassword,
+		)
+		public.POST("/superadmin/login",
+			middleware.StrictRateLimit(),
+			superAdminHandler.Login,
+		)
+		public.POST("/superadmin/refresh",
+			middleware.StrictRateLimit(),
+			superAdminHandler.Refresh,
 		)
 
 		// ----- Public Menu Viewing -----
@@ -270,6 +278,21 @@ func SetupRouter(
 				branchHandler.DeleteBranch,
 			)
 		}
+	}
+
+	// ========== SUPERADMIN ROUTES (separate token type, no tenant scope) ==========
+	superadmin := r.Group("/api/superadmin")
+	superadmin.Use(middleware.SuperAdminAuthMiddleware(jwtSecret))
+	superadmin.Use(middleware.RelaxedRateLimit())
+	{
+		superadmin.GET("/overview",
+			middleware.RequirePermission("view_platform_analytics"),
+			superAdminHandler.Overview,
+		)
+		superadmin.GET("/tenants",
+			middleware.RequirePermission("view_platform_analytics"),
+			superAdminHandler.Tenants,
+		)
 	}
 
 	return r

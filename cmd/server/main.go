@@ -120,16 +120,23 @@ func main() {
 	alertService := notifications.NewAlertService(cfg.TelegramBotToken, cfg.TelegramChatID)
 
 	// ================= WORKERS =================
+	// ================= WORKERS =================
+	// ================= WORKERS =================
 	go notifications.StartWhatsAppWorker(eventBus, whatsapp)
 	go notifications.StartKitchenWorker(eventBus, hub)
-	go workers.StartSessionExpiryWorker(queries)
 
+	paymentsWorkerReady := make(chan struct{})
+	go notifications.StartPaymentsWorker(eventBus, hub, paymentsWorkerReady)
+	<-paymentsWorkerReady // block until the subscription is confirmed live — see StartPaymentsWorker's doc comment
+
+	go workers.StartSessionExpiryWorker(queries)
 	// ================= CORE SERVICES =================
 	activityService := service.NewActivityService(queries)
 	inventoryService := service.NewInventoryService(queries)
 
 	// ================= BUSINESS SERVICES =================
 	authService := service.NewAuthService(queries, []byte(cfg.JWTSecret), redisClient, logger)
+	superAdminService := service.NewSuperAdminService(queries, []byte(cfg.JWTSecret), redisClient, logger)
 	menuService := service.NewMenuService(queries, appCache)
 	branchService := service.NewBranchService(queries)
 	tableService := service.NewTableService(queries)
@@ -164,6 +171,7 @@ func main() {
 
 	// ================= HANDLERS =================
 	authHandler := handler.NewAuthHandler(authService)
+	superAdminHandler := handler.NewSuperAdminHandler(superAdminService, logger)
 	menuHandler := handler.NewMenuHandler(menuService, tableSessionService)
 	branchHandler := handler.NewBranchHandler(branchService)
 	tableHandler := handler.NewTableHandler(tableService)
@@ -202,6 +210,7 @@ func main() {
 		inventoryHandler,
 		passwordResetHandler,
 		aiHandler,
+		superAdminHandler,
 	)
 
 	// ================= SERVER =================

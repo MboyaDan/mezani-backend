@@ -106,12 +106,13 @@ func (s *PaymentService) InitiateCashPayment(
 		}
 		return db.Payment{}, err
 	}
-
-	event := map[string]string{
-		"type":             "payment_initiated",
-		"payment_id":       payment.ID.String(),
-		"table_session_id": tableSessionID.String(),
-		"method":           string(domain.PaymentMethodCash),
+	event := notifications.PaymentInitiatedEvent{
+		Type:           "payment_initiated",
+		PaymentID:      payment.ID.String(),
+		TableSessionID: tableSessionID.String(),
+		BranchID:       ownership.BranchID.String(),
+		Method:         string(domain.PaymentMethodCash),
+		Amount:         amount,
 	}
 	if err := s.EventBus.Publish("payments.initiated", event); err != nil {
 		log.Println("failed to publish payment.initiated event:", err)
@@ -148,10 +149,11 @@ func (s *PaymentService) ConfirmCashPayment(ctx context.Context, paymentID uuid.
 		EntityID:   payment.ID,
 	})
 
-	event := map[string]string{
-		"type":             "payment_confirmed",
-		"payment_id":       payment.ID.String(),
-		"table_session_id": payment.TableSessionID.String(),
+	event := notifications.PaymentConfirmedEvent{
+		Type:           "payment_confirmed",
+		PaymentID:      payment.ID.String(),
+		TableSessionID: payment.TableSessionID.String(),
+		BranchID:       payment.BranchID.String(),
 	}
 	if err := s.EventBus.Publish("payments.confirmed", event); err != nil {
 		log.Println("failed to publish payment.confirmed event:", err)

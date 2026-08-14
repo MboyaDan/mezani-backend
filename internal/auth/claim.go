@@ -12,3 +12,10 @@ type Claims struct {
 	Plan            string `json:"plan"`
 	jwt.RegisteredClaims
 }
+
+type PlatformAdminClaims struct {
+	AdminID string `json:"aid"`
+	Email   string `json:"email"`
+	Role    string `json:"role"` // always "superadmin" — kept for symmetry with Claims
+	jwt.RegisteredClaims
+}
