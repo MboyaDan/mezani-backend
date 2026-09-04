@@ -1,9 +1,11 @@
 package handler
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -14,12 +16,23 @@ import (
 type StaffHandler struct {
 	Service      *service.AuthService
 	StaffService *service.StaffService
+	// GetTenantSubscription is injected (not a direct DB dependency) so
+	// /me can return authoritative subscription status alongside profile
+	// info — the frontend's trial/expiry UI needs this to be real server
+	// state, not a client-side JWT calculation that goes stale the
+	// moment a tenant actually renews.
+	GetTenantSubscription func(ctx context.Context, tenantID uuid.UUID) (status string, expiresAt time.Time, err error)
 }
 
-func NewStaffHandler(auth *service.AuthService, staff *service.StaffService) *StaffHandler {
+func NewStaffHandler(
+	auth *service.AuthService,
+	staff *service.StaffService,
+	getTenantSubscription func(ctx context.Context, tenantID uuid.UUID) (string, time.Time, error),
+) *StaffHandler {
 	return &StaffHandler{
-		Service:      auth,
-		StaffService: staff,
+		Service:               auth,
+		StaffService:          staff,
+		GetTenantSubscription: getTenantSubscription,
 	}
 }
 
@@ -125,12 +138,14 @@ func (h *StaffHandler) DeleteStaff(c *gin.Context) {
 }
 
 type MeResponse struct {
-	ID       string `json:"id"`
-	TenantID string `json:"tenant_id"`
-	BranchID string `json:"branch_id,omitempty"`
-	Name     string `json:"name"`
-	Email    string `json:"email"`
-	Role     string `json:"role"`
+	ID                    string `json:"id"`
+	TenantID              string `json:"tenant_id"`
+	BranchID              string `json:"branch_id,omitempty"`
+	Name                  string `json:"name"`
+	Email                 string `json:"email"`
+	Role                  string `json:"role"`
+	SubscriptionStatus    string `json:"subscription_status"`
+	SubscriptionExpiresAt string `json:"subscription_expires_at"`
 }
 
 func (h *StaffHandler) Me(c *gin.Context) {
@@ -152,12 +167,21 @@ func (h *StaffHandler) Me(c *gin.Context) {
 		return
 	}
 
+	subStatus, subExpiresAt, err := h.GetTenantSubscription(c.Request.Context(), staff.TenantID)
+	if err != nil {
+		c.Error(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "unable to fetch subscription status"})
+		return
+	}
+
 	resp := MeResponse{
-		ID:       staff.ID.String(),
-		TenantID: staff.TenantID.String(),
-		Name:     staff.Name,
-		Email:    staff.Email,
-		Role:     staff.Role,
+		ID:                    staff.ID.String(),
+		TenantID:              staff.TenantID.String(),
+		Name:                  staff.Name,
+		Email:                 staff.Email,
+		Role:                  staff.Role,
+		SubscriptionStatus:    subStatus,
+		SubscriptionExpiresAt: subExpiresAt.Format("2006-01-02T15:04:05Z07:00"),
 	}
 	if staff.BranchID.Valid {
 		resp.BranchID = uuid.UUID(staff.BranchID.Bytes).String()

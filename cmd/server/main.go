@@ -16,6 +16,7 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"mezzani_backend/internal/ai"
@@ -137,6 +138,9 @@ func main() {
 	// ================= BUSINESS SERVICES =================
 	authService := service.NewAuthService(queries, []byte(cfg.JWTSecret), redisClient, logger)
 	superAdminService := service.NewSuperAdminService(queries, []byte(cfg.JWTSecret), redisClient, logger)
+
+	paystackClient := service.NewPaystackClient(cfg.PaystackSecretKey)
+	subscriptionService := service.NewSubscriptionService(queries, paystackClient, cfg.FrontendURL, logger)
 	menuService := service.NewMenuService(queries, appCache)
 	branchService := service.NewBranchService(queries)
 	tableService := service.NewTableService(queries)
@@ -168,10 +172,9 @@ func main() {
 	)
 
 	// ================= HANDLERS =================
-
-	// ================= HANDLERS =================
 	authHandler := handler.NewAuthHandler(authService)
 	superAdminHandler := handler.NewSuperAdminHandler(superAdminService, logger)
+	subscriptionHandler := handler.NewSubscriptionHandler(subscriptionService, paystackClient, logger)
 	menuHandler := handler.NewMenuHandler(menuService, tableSessionService)
 	branchHandler := handler.NewBranchHandler(branchService)
 	tableHandler := handler.NewTableHandler(tableService)
@@ -182,7 +185,17 @@ func main() {
 	orderHandler := handler.NewOrderHandler(orderService)
 	billingHandler := handler.NewBillingHandler(billingService)
 	paymentHandler := handler.NewPaymentHandler(paymentService)
-	staffHandler := handler.NewStaffHandler(authService, staffService)
+
+	staffHandler := handler.NewStaffHandler(authService, staffService,
+		func(ctx context.Context, tenantID uuid.UUID) (string, time.Time, error) {
+			row, err := queries.GetTenantSubscriptionStatus(ctx, tenantID)
+			if err != nil {
+				return "", time.Time{}, err
+			}
+			return row.SubscriptionStatus, row.SubscriptionExpiresAt, nil
+		},
+	)
+
 	inventoryHandler := handler.NewInventoryHandler(inventoryService)
 	wsHandler := handler.NewWSHandler(hub)
 	passwordResetHandler := handler.NewPasswordResetHandler(passwordResetService)
@@ -211,6 +224,14 @@ func main() {
 		passwordResetHandler,
 		aiHandler,
 		superAdminHandler,
+		subscriptionHandler,
+		func(ctx context.Context, tenantID uuid.UUID) (time.Time, error) {
+			row, err := queries.GetTenantSubscriptionStatus(ctx, tenantID)
+			if err != nil {
+				return time.Time{}, err
+			}
+			return row.SubscriptionExpiresAt, nil
+		},
 	)
 
 	// ================= SERVER =================

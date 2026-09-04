@@ -7,6 +7,7 @@ package db
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -18,7 +19,7 @@ INSERT INTO tenants (
     plan
 )
 VALUES ($1,$2,$3)
-RETURNING id, name, plan, created_at
+RETURNING id, name, plan, created_at, subscription_status, subscription_expires_at
 `
 
 type CreateTenantParams struct {
@@ -35,12 +36,51 @@ func (q *Queries) CreateTenant(ctx context.Context, arg CreateTenantParams) (Ten
 		&i.Name,
 		&i.Plan,
 		&i.CreatedAt,
+		&i.SubscriptionStatus,
+		&i.SubscriptionExpiresAt,
+	)
+	return i, err
+}
+
+const extendTenantSubscription = `-- name: ExtendTenantSubscription :one
+UPDATE tenants
+SET subscription_status = 'active',
+    plan = p.name,
+    subscription_expires_at = GREATEST(NOW(), tenants.subscription_expires_at) + make_interval(days => p.billing_period_days)
+FROM plans p
+WHERE tenants.id = $1
+  AND p.id = $2
+  AND p.is_active = TRUE
+RETURNING tenants.id, tenants.name, tenants.plan, tenants.created_at, tenants.subscription_status, tenants.subscription_expires_at
+`
+
+type ExtendTenantSubscriptionParams struct {
+	TenantID uuid.UUID
+	PlanID   uuid.UUID
+}
+
+// Takes plan_id, not a free-floating plan name + period. Both `plan` and
+// the renewal period are derived from the matching plans row in this
+// same UPDATE, so it's structurally impossible for a caller to set
+// tenants.plan to a nonexistent/inactive plan, or push
+// subscription_expires_at backward with a negative period — there is no
+// parameter path that bypasses the plans table.
+func (q *Queries) ExtendTenantSubscription(ctx context.Context, arg ExtendTenantSubscriptionParams) (Tenant, error) {
+	row := q.db.QueryRow(ctx, extendTenantSubscription, arg.TenantID, arg.PlanID)
+	var i Tenant
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Plan,
+		&i.CreatedAt,
+		&i.SubscriptionStatus,
+		&i.SubscriptionExpiresAt,
 	)
 	return i, err
 }
 
 const getTenantByID = `-- name: GetTenantByID :one
-SELECT id, name, plan, created_at
+SELECT id, name, plan, created_at, subscription_status, subscription_expires_at
 FROM tenants
 WHERE id = $1
 `
@@ -53,6 +93,52 @@ func (q *Queries) GetTenantByID(ctx context.Context, id uuid.UUID) (Tenant, erro
 		&i.Name,
 		&i.Plan,
 		&i.CreatedAt,
+		&i.SubscriptionStatus,
+		&i.SubscriptionExpiresAt,
 	)
+	return i, err
+}
+
+const getTenantByIDForUpdate = `-- name: GetTenantByIDForUpdate :one
+SELECT id, name, plan, created_at, subscription_status, subscription_expires_at
+FROM tenants
+WHERE id = $1
+FOR UPDATE
+`
+
+// Locks the tenant row for the duration of the transaction — used by
+// BranchService.CreateBranch to serialize concurrent branch-creation
+// attempts for the same tenant, closing the count-then-insert race.
+func (q *Queries) GetTenantByIDForUpdate(ctx context.Context, id uuid.UUID) (Tenant, error) {
+	row := q.db.QueryRow(ctx, getTenantByIDForUpdate, id)
+	var i Tenant
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Plan,
+		&i.CreatedAt,
+		&i.SubscriptionStatus,
+		&i.SubscriptionExpiresAt,
+	)
+	return i, err
+}
+
+const getTenantSubscriptionStatus = `-- name: GetTenantSubscriptionStatus :one
+SELECT subscription_status, subscription_expires_at
+FROM tenants
+WHERE id = $1
+`
+
+type GetTenantSubscriptionStatusRow struct {
+	SubscriptionStatus    string
+	SubscriptionExpiresAt time.Time
+}
+
+// Used by the enforcement middleware on (nearly) every authenticated
+// request — deliberately narrow rather than SELECT * on the whole row.
+func (q *Queries) GetTenantSubscriptionStatus(ctx context.Context, id uuid.UUID) (GetTenantSubscriptionStatusRow, error) {
+	row := q.db.QueryRow(ctx, getTenantSubscriptionStatus, id)
+	var i GetTenantSubscriptionStatusRow
+	err := row.Scan(&i.SubscriptionStatus, &i.SubscriptionExpiresAt)
 	return i, err
 }

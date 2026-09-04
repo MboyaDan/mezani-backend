@@ -1,6 +1,9 @@
 package handler
 
 import (
+	"errors"
+	"net/http"
+
 	"mezzani_backend/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -43,6 +46,13 @@ func (h *BranchHandler) CreateBranch(c *gin.Context) {
 	)
 
 	if err != nil {
+		if errors.Is(err, service.ErrBranchLimitReached) {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": "You've reached the branch limit for your current plan. Upgrade to add more branches.",
+				"code":  "branch_limit_reached",
+			})
+			return
+		}
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}

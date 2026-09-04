@@ -2,10 +2,14 @@
 -- TENANTS & BRANCHES
 -- ============================================================
 CREATE TABLE tenants (
-    id         UUID PRIMARY KEY,
-    name       TEXT NOT NULL,
-    plan       TEXT DEFAULT 'tier1',
-    created_at TIMESTAMP DEFAULT NOW()
+    id                      UUID PRIMARY KEY,
+    name                    TEXT NOT NULL,
+    plan                    TEXT DEFAULT 'tier1',
+    created_at              TIMESTAMP DEFAULT NOW(),
+    subscription_status     TEXT NOT NULL DEFAULT 'trialing',
+    subscription_expires_at TIMESTAMP NOT NULL DEFAULT (NOW() + INTERVAL '14 days'),
+    CONSTRAINT tenants_subscription_status_check
+        CHECK (subscription_status IN ('trialing', 'active', 'expired', 'cancelled'))
 );
 
 CREATE TABLE branches (
@@ -188,6 +192,48 @@ CREATE TABLE payments (
 CREATE UNIQUE INDEX one_pending_payment_per_session
     ON payments (table_session_id)
     WHERE status = 'pending';
+
+-- ============================================================
+-- PLANS
+-- ============================================================
+CREATE TABLE plans (
+    id                  UUID PRIMARY KEY,
+    name                TEXT UNIQUE NOT NULL,
+    display_name        TEXT NOT NULL,
+    price_kes           NUMERIC NOT NULL,
+    billing_period_days INT NOT NULL DEFAULT 30,
+    max_branches        INT NOT NULL,
+    is_active           BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at          TIMESTAMP DEFAULT NOW(),
+    CONSTRAINT plans_price_check CHECK (
+        price_kes > 0
+        AND price_kes NOT IN ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)
+    ),
+    CONSTRAINT plans_billing_period_check CHECK (billing_period_days > 0),
+    CONSTRAINT plans_max_branches_check CHECK (max_branches > 0)
+);
+
+-- ============================================================
+-- SUBSCRIPTION PAYMENTS
+-- ============================================================
+CREATE TABLE subscription_payments (
+    id                  UUID PRIMARY KEY,
+    tenant_id           UUID NOT NULL REFERENCES tenants(id),
+    plan_id             UUID NOT NULL REFERENCES plans(id),
+    amount              NUMERIC NOT NULL,
+    currency            TEXT NOT NULL DEFAULT 'KES',
+    paystack_reference  TEXT UNIQUE NOT NULL,
+    status              TEXT NOT NULL DEFAULT 'pending',
+    initiated_by        UUID REFERENCES staff_users(id),
+    created_at          TIMESTAMP DEFAULT NOW(),
+    verified_at         TIMESTAMP,
+    CONSTRAINT subscription_payments_status_check CHECK (status IN ('pending', 'success', 'failed')),
+    CONSTRAINT subscription_payments_amount_check CHECK (
+        amount > 0
+        AND amount NOT IN ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)
+    )
+);
+
 -- ============================================================
 -- PLATFORM ADMINS
 -- ============================================================
@@ -274,3 +320,7 @@ CREATE INDEX idx_payments_tenant_id        ON payments (tenant_id);
 CREATE INDEX idx_payments_branch_id        ON payments (branch_id);
 CREATE INDEX idx_payments_status           ON payments (status);
 CREATE INDEX idx_payments_created_at       ON payments (created_at DESC); 
+
+-- Subscription payments: queried by tenant_id, status
+CREATE INDEX idx_subscription_payments_tenant_id ON subscription_payments (tenant_id);
+CREATE INDEX idx_subscription_payments_status    ON subscription_payments (status);

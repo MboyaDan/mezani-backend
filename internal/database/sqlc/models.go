@@ -117,6 +117,17 @@ type Payment struct {
 	ConfirmedAt    pgtype.Timestamp
 }
 
+type Plan struct {
+	ID                uuid.UUID
+	Name              string
+	DisplayName       string
+	PriceKes          float64
+	BillingPeriodDays int32
+	MaxBranches       int32
+	IsActive          bool
+	CreatedAt         time.Time
+}
+
 type PlatformAdmin struct {
 	ID           uuid.UUID
 	Name         string
@@ -159,6 +170,19 @@ type StaffUser struct {
 	CreatedAt    time.Time
 }
 
+type SubscriptionPayment struct {
+	ID                uuid.UUID
+	TenantID          uuid.UUID
+	PlanID            uuid.UUID
+	Amount            float64
+	Currency          string
+	PaystackReference string
+	Status            string
+	InitiatedBy       pgtype.UUID
+	CreatedAt         time.Time
+	VerifiedAt        pgtype.Timestamp
+}
+
 type Table struct {
 	ID          uuid.UUID
 	BranchID    uuid.UUID
@@ -174,8 +198,10 @@ type TableSession struct {
 }
 
 type Tenant struct {
-	ID        uuid.UUID
-	Name      string
-	Plan      string
-	CreatedAt time.Time
+	ID                    uuid.UUID
+	Name                  string
+	Plan                  string
+	CreatedAt             time.Time
+	SubscriptionStatus    string
+	SubscriptionExpiresAt time.Time
 }

@@ -102,7 +102,7 @@ sql:
               import: "github.com/google/uuid"
               type: "UUID"
 
-        # === PAYMENTS OVERRIDES ===
+          # === PAYMENTS OVERRIDES ===
           - column: "payments.branch_id"
             go_type:
               import: "github.com/google/uuid"
@@ -128,6 +128,31 @@ sql:
               type: "Text"
             nullable: true
           - column: "payments.amount"
+            go_type: "float64"
+
+          # === TENANTS SUBSCRIPTION OVERRIDES ===
+          - column: "tenants.subscription_expires_at"
+            go_type:
+              type: "time.Time"
+
+          # === PLANS / SUBSCRIPTION PAYMENTS OVERRIDES ===
+          - column: "plans.price_kes"
+            go_type: "float64"
+          - column: "subscription_payments.plan_id"
+            go_type:
+              import: "github.com/google/uuid"
+              type: "UUID"
+          - column: "subscription_payments.initiated_by"
+            go_type:
+              import: "github.com/jackc/pgx/v5/pgtype"
+              type: "UUID"
+            nullable: true
+          - column: "subscription_payments.verified_at"
+            go_type:
+              import: "github.com/jackc/pgx/v5/pgtype"
+              type: "Timestamp"
+            nullable: true
+          - column: "subscription_payments.amount"
             go_type: "float64"
 
           # === STAFF ACTIVITIES OVERRIDES ===

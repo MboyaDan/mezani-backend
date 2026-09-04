@@ -42,7 +42,7 @@ func (q *Queries) GetPlatformOverview(ctx context.Context) (GetPlatformOverviewR
 }
 
 const getTenantByIDForAdmin = `-- name: GetTenantByIDForAdmin :one
-SELECT id, name, plan, created_at FROM tenants
+SELECT id, name, plan, created_at, subscription_status, subscription_expires_at FROM tenants
 WHERE id = $1
 `
 
@@ -56,6 +56,8 @@ func (q *Queries) GetTenantByIDForAdmin(ctx context.Context, id uuid.UUID) (Tena
 		&i.Name,
 		&i.Plan,
 		&i.CreatedAt,
+		&i.SubscriptionStatus,
+		&i.SubscriptionExpiresAt,
 	)
 	return i, err
 }

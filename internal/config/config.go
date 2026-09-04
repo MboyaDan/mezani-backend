@@ -8,21 +8,22 @@ import (
 )
 
 type Config struct {
-	AppEnv           string
-	Port             string
-	DatabaseURL      string
-	RedisURL         string
-	JWTSecret        string
-	WhatsappToken    string
-	WhatsappPhoneID  string
-	AllowedOrigins   []string
-	ResendAPIKey     string
-	ResendFromEmail  string
-	FrontendURL      string
-	TelegramBotToken string
-	TelegramChatID   string
-	GroqAPIKey       string
-	GroqModel        string
+	AppEnv            string
+	Port              string
+	DatabaseURL       string
+	RedisURL          string
+	JWTSecret         string
+	WhatsappToken     string
+	WhatsappPhoneID   string
+	AllowedOrigins    []string
+	ResendAPIKey      string
+	ResendFromEmail   string
+	FrontendURL       string
+	TelegramBotToken  string
+	TelegramChatID    string
+	GroqAPIKey        string
+	GroqModel         string
+	PaystackSecretKey string
 }
 
 func LoadConfig() *Config {
@@ -49,10 +50,11 @@ func LoadConfig() *Config {
 		ResendFromEmail: viper.GetString("RESEND_FROM_EMAIL"),
 		FrontendURL:     viper.GetString("FRONTEND_URL"),
 
-		TelegramBotToken: viper.GetString("TELEGRAM_BOT_TOKEN"),
-		TelegramChatID:   viper.GetString("TELEGRAM_CHAT_ID"),
-		GroqAPIKey:       viper.GetString("GROQ_API_KEY"),
-		GroqModel:        viper.GetString("GROQ_MODEL"),
+		TelegramBotToken:  viper.GetString("TELEGRAM_BOT_TOKEN"),
+		TelegramChatID:    viper.GetString("TELEGRAM_CHAT_ID"),
+		GroqAPIKey:        viper.GetString("GROQ_API_KEY"),
+		GroqModel:         viper.GetString("GROQ_MODEL"),
+		PaystackSecretKey: viper.GetString("PAYSTACK_SECRET_KEY"),
 	}
 	if config.DatabaseURL == "" {
 		log.Fatal("DATABASE_URL is required")
@@ -65,6 +67,12 @@ func LoadConfig() *Config {
 	}
 	if config.WhatsappPhoneID == "" {
 		log.Fatal("WHATSAPP_PHONE_ID is required")
+	}
+	if config.PaystackSecretKey == "" {
+		if config.AppEnv == "production" {
+			log.Fatal("PAYSTACK_SECRET_KEY is required in production")
+		}
+		log.Println("WARNING: PAYSTACK_SECRET_KEY is not set — subscription renewal and webhook verification are disabled")
 	}
 	return config
 }

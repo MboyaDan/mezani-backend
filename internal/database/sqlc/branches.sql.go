@@ -11,6 +11,17 @@ import (
 	"github.com/google/uuid"
 )
 
+const countBranchesByTenant = `-- name: CountBranchesByTenant :one
+SELECT COUNT(*)::int FROM branches WHERE tenant_id = $1
+`
+
+func (q *Queries) CountBranchesByTenant(ctx context.Context, tenantID uuid.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, countBranchesByTenant, tenantID)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const createBranch = `-- name: CreateBranch :one
 INSERT INTO branches (
  id,

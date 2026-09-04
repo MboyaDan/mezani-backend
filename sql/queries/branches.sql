@@ -13,6 +13,9 @@ SELECT *
 FROM branches
 WHERE tenant_id = $1;
 
+-- name: CountBranchesByTenant :one
+SELECT COUNT(*)::int FROM branches WHERE tenant_id = $1;
+
 -- name: GetBranchByID :one
 SELECT id, tenant_id, name, location, created_at
 FROM branches

@@ -38,6 +38,8 @@ func SetupRouter(
 	passwordResetHandler *handler.PasswordResetHandler,
 	aiHandler *handler.AIHandler,
 	superAdminHandler *handler.SuperAdminHandler,
+	subscriptionHandler *handler.SubscriptionHandler,
+	getTenantSubscriptionExpiry func(ctx context.Context, tenantID uuid.UUID) (time.Time, error),
 ) *gin.Engine {
 
 	r := gin.New()
@@ -115,12 +117,16 @@ func SetupRouter(
 		public.POST("/cart/join", middleware.ModerateRateLimit(), cartHandler.JoinCart)
 		public.POST("/cart/add-item", middleware.ModerateRateLimit(), cartHandler.AddItem)
 		public.POST("/orders/submit", middleware.ModerateRateLimit(), orderHandler.SubmitCart)
+
+		// ----- Paystack webhook (authenticated via HMAC signature, not JWT) -----
+		public.POST("/webhooks/paystack", subscriptionHandler.Webhook)
 	}
 
 	// ========== PROTECTED ROUTES (JWT Required) ==========
 	protected := r.Group("/api")
 	protected.Use(middleware.AuthMiddleware(jwtSecret))
 	protected.Use(middleware.RelaxedRateLimit())
+	protected.Use(middleware.SubscriptionGuard(getTenantSubscriptionExpiry))
 	{
 		// ----- Manager — Tables (view + manage, no add) -----
 		manager := protected.Group("/manager")
@@ -234,8 +240,6 @@ func SetupRouter(
 			ai.POST("/chat", aiHandler.Chat)
 		}
 
-		protected.GET("/me", staffHandler.Me)
-
 		// ----- Staff Management -----
 		// GET  /staff/list   — owner + manager (view_staff)
 		// POST /staff/create — owner only      (manage_staff)
@@ -278,6 +282,23 @@ func SetupRouter(
 				branchHandler.DeleteBranch,
 			)
 		}
+	}
+
+	// ========== ACCOUNT ROUTES (JWT required, deliberately NOT
+	// subscription-gated — an expired tenant must still be able to see
+	// their own status and pay to renew) ==========
+	account := r.Group("/api")
+	account.Use(middleware.AuthMiddleware(jwtSecret))
+	account.Use(middleware.RelaxedRateLimit())
+	{
+		account.GET("/me", staffHandler.Me)
+
+		account.GET("/subscription/plans", subscriptionHandler.Plans)
+		account.POST("/subscription/renew",
+			middleware.RequirePermission("manage_branches"), // owner-level action
+			subscriptionHandler.InitiateRenewal,
+		)
+		account.POST("/subscription/verify", subscriptionHandler.Verify)
 	}
 
 	// ========== SUPERADMIN ROUTES (separate token type, no tenant scope) ==========
