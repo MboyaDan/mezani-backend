@@ -119,7 +119,10 @@ func SetupRouter(
 		public.POST("/orders/submit", middleware.ModerateRateLimit(), orderHandler.SubmitCart)
 
 		// ----- Paystack webhook (authenticated via HMAC signature, not JWT) -----
-		public.POST("/webhooks/paystack", subscriptionHandler.Webhook)
+		public.POST("/webhooks/paystack",
+			middleware.RelaxedRateLimit(),
+			subscriptionHandler.Webhook,
+		)
 	}
 
 	// ========== PROTECTED ROUTES (JWT Required) ==========

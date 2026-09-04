@@ -55,7 +55,7 @@ ALTER TABLE tenants ADD CONSTRAINT tenants_subscription_status_check
     CHECK (subscription_status IN ('trialing', 'active', 'expired', 'cancelled'));
 
 UPDATE tenants
-SET subscription_expires_at = created_at + INTERVAL '14 days';
+SET subscription_expires_at = COALESCE(created_at, NOW()) + INTERVAL '14 days';
 
 -- ============================================================
 -- RLS — same default-deny posture as every other table
