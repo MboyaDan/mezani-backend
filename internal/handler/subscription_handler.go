@@ -142,6 +142,10 @@ func (h *SubscriptionHandler) Verify(c *gin.Context) {
 		case errors.Is(err, service.ErrAmountMismatch):
 			h.Logger.ErrorContext(c.Request.Context(), "subscription payment amount mismatch", "reference", req.Reference)
 			c.JSON(http.StatusConflict, gin.H{"error": "payment verification failed"})
+		case errors.Is(err, service.ErrPlanUnavailable):
+			c.JSON(http.StatusConflict, gin.H{
+				"error": "Your payment was received, but we couldn't activate this plan. Please contact support with this reference: " + req.Reference,
+			})
 		default:
 			h.Logger.ErrorContext(c.Request.Context(), "verify failed", "error", err, "reference", req.Reference)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "verification failed"})

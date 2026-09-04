@@ -17,6 +17,7 @@ var (
 	ErrPaymentNotSuccessful    = errors.New("payment was not successful")
 	ErrPaymentReferenceUnknown = errors.New("unknown payment reference")
 	ErrAmountMismatch          = errors.New("paid amount does not match the expected plan price")
+	ErrPlanUnavailable         = errors.New("plan is no longer available — payment requires manual settlement")
 )
 
 type SubscriptionService struct {
@@ -186,23 +187,51 @@ func (s *SubscriptionService) verifyAndActivate(ctx context.Context, callerTenan
 
 	qtx := s.Queries.WithTx(tx)
 
-	if _, err := qtx.MarkSubscriptionPaymentSuccess(ctx, reference); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return s.Queries.GetTenantByID(ctx, payment.TenantID)
-		}
-		return db.Tenant{}, err
-	}
-
-	// plan_id (not a free-floating name/period) — ExtendTenantSubscription
-	// derives the actual plan name and billing period from the plans
-	// table itself in the same statement, so there's no path here that
-	// could set an invalid plan or a negative period.
+	// Extend FIRST, mark success SECOND — deliberately in this order. If
+	// MarkSubscriptionPaymentSuccess ran first (flipping status to
+	// 'success' within this same uncommitted transaction) and extension
+	// then failed, marking the payment 'failed' afterward would hit
+	// MarkSubscriptionPaymentFailed's own `WHERE status = 'pending'`
+	// guard — which would no longer match, since this transaction
+	// already (locally) changed it to 'success'. Extending first means
+	// nothing has touched payment status yet if this fails, so the
+	// terminal-state path below works correctly.
 	tenant, err := qtx.ExtendTenantSubscription(ctx, db.ExtendTenantSubscriptionParams{
 		TenantID: payment.TenantID,
 		PlanID:   payment.PlanID,
 	})
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// Terminal, not transient: the plan was deactivated (or
+			// deleted) between InitiateRenewal and this verification, so
+			// this WHERE clause (p.is_active = TRUE) will never match
+			// again for this plan_id — every future webhook redelivery or
+			// redirect-fallback retry would hit this exact same failure
+			// forever. Paystack has already captured real money from the
+			// customer at this point, so this MUST be recorded as a
+			// terminal state (not left "pending" for pointless endless
+			// retries) and logged loudly enough for someone to manually
+			// settle or refund it.
+			if _, markErr := qtx.MarkSubscriptionPaymentFailed(ctx, reference); markErr != nil {
+				s.Logger.ErrorContext(ctx, "failed to record terminal payment state", "error", markErr, "reference", reference)
+				return db.Tenant{}, markErr
+			}
+			if commitErr := tx.Commit(ctx); commitErr != nil {
+				return db.Tenant{}, fmt.Errorf("failed to commit terminal payment state: %w", commitErr)
+			}
+			s.Logger.ErrorContext(ctx, "PAID subscription could not be activated — plan missing or inactive; needs manual settlement or refund",
+				"reference", reference, "tenant_id", payment.TenantID, "plan_id", payment.PlanID,
+				"amount", payment.Amount, "currency", payment.Currency)
+			return db.Tenant{}, ErrPlanUnavailable
+		}
 		return db.Tenant{}, fmt.Errorf("payment succeeded but subscription extension failed: %w", err)
+	}
+
+	if _, err := qtx.MarkSubscriptionPaymentSuccess(ctx, reference); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return s.Queries.GetTenantByID(ctx, payment.TenantID)
+		}
+		return db.Tenant{}, err
 	}
 
 	if err := tx.Commit(ctx); err != nil {
