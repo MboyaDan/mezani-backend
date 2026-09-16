@@ -39,6 +39,7 @@ func SetupRouter(
 	aiHandler *handler.AIHandler,
 	superAdminHandler *handler.SuperAdminHandler,
 	subscriptionHandler *handler.SubscriptionHandler,
+	contactHandler *handler.ContactHandler,
 	getTenantSubscriptionExpiry func(ctx context.Context, tenantID uuid.UUID) (time.Time, error),
 ) *gin.Engine {
 
@@ -117,6 +118,9 @@ func SetupRouter(
 		public.POST("/cart/join", middleware.ModerateRateLimit(), cartHandler.JoinCart)
 		public.POST("/cart/add-item", middleware.ModerateRateLimit(), cartHandler.AddItem)
 		public.POST("/orders/submit", middleware.ModerateRateLimit(), orderHandler.SubmitCart)
+
+		// ----- Contact form (public, unauthenticated) -----
+		public.POST("/contact", middleware.StrictRateLimit(), contactHandler.Submit)
 
 		// ----- Paystack webhook (authenticated via HMAC signature, not JWT) -----
 		public.POST("/webhooks/paystack",

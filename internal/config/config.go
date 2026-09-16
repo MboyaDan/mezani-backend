@@ -8,22 +8,23 @@ import (
 )
 
 type Config struct {
-	AppEnv            string
-	Port              string
-	DatabaseURL       string
-	RedisURL          string
-	JWTSecret         string
-	WhatsappToken     string
-	WhatsappPhoneID   string
-	AllowedOrigins    []string
-	ResendAPIKey      string
-	ResendFromEmail   string
-	FrontendURL       string
-	TelegramBotToken  string
-	TelegramChatID    string
-	GroqAPIKey        string
-	GroqModel         string
-	PaystackSecretKey string
+	AppEnv                 string
+	Port                   string
+	DatabaseURL            string
+	RedisURL               string
+	JWTSecret              string
+	WhatsappToken          string
+	WhatsappPhoneID        string
+	AllowedOrigins         []string
+	ResendAPIKey           string
+	ResendFromEmail        string
+	FrontendURL            string
+	TelegramBotToken       string
+	TelegramChatID         string
+	GroqAPIKey             string
+	GroqModel              string
+	PaystackSecretKey      string
+	ContactRecipientEmails []string
 }
 
 func LoadConfig() *Config {
@@ -56,6 +57,16 @@ func LoadConfig() *Config {
 		GroqModel:         viper.GetString("GROQ_MODEL"),
 		PaystackSecretKey: viper.GetString("PAYSTACK_SECRET_KEY"),
 	}
+
+	var contactRecipients []string
+	for _, e := range strings.Split(viper.GetString("CONTACT_RECIPIENT_EMAILS"), ",") {
+		trimmed := strings.TrimSpace(e)
+		if trimmed != "" {
+			contactRecipients = append(contactRecipients, trimmed)
+		}
+	}
+	config.ContactRecipientEmails = contactRecipients
+
 	if config.DatabaseURL == "" {
 		log.Fatal("DATABASE_URL is required")
 	}
@@ -73,6 +84,9 @@ func LoadConfig() *Config {
 			log.Fatal("PAYSTACK_SECRET_KEY is required in production")
 		}
 		log.Println("WARNING: PAYSTACK_SECRET_KEY is not set — subscription renewal and webhook verification are disabled")
+	}
+	if len(config.ContactRecipientEmails) == 0 {
+		log.Println("WARNING: CONTACT_RECIPIENT_EMAILS is not set — contact form submissions will fail until it's configured")
 	}
 	return config
 }

@@ -175,6 +175,8 @@ func main() {
 	authHandler := handler.NewAuthHandler(authService)
 	superAdminHandler := handler.NewSuperAdminHandler(superAdminService, logger)
 	subscriptionHandler := handler.NewSubscriptionHandler(subscriptionService, paystackClient, logger)
+	contactHandler := handler.NewContactHandler(emailSender, cfg.ContactRecipientEmails, logger)
+
 	menuHandler := handler.NewMenuHandler(menuService, tableSessionService)
 	branchHandler := handler.NewBranchHandler(branchService)
 	tableHandler := handler.NewTableHandler(tableService)
@@ -225,6 +227,8 @@ func main() {
 		aiHandler,
 		superAdminHandler,
 		subscriptionHandler,
+		contactHandler,
+		
 		func(ctx context.Context, tenantID uuid.UUID) (time.Time, error) {
 			row, err := queries.GetTenantSubscriptionStatus(ctx, tenantID)
 			if err != nil {
