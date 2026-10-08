@@ -4,9 +4,10 @@ INSERT INTO orders (
     table_session_id,
     customer_session_id,
     cart_id,
-    status
+    status,
+    note
 )
-VALUES ($1,$2,$3,$4,'pending')
+VALUES ($1,$2,$3,$4,'pending',$5)
 RETURNING *;
 
 
@@ -56,6 +57,7 @@ SELECT
     o.cart_id,
     o.status,
     o.created_at,
+    o.note,
     t.table_number
 FROM orders o
 JOIN table_sessions ts ON ts.id = o.table_session_id

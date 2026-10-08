@@ -16,7 +16,7 @@ const closeOrderBill = `-- name: CloseOrderBill :one
 UPDATE orders
 SET status = 'closed'
 WHERE id = $1
-RETURNING id, table_session_id, customer_session_id, cart_id, status, created_at
+RETURNING id, table_session_id, customer_session_id, cart_id, status, created_at, note
 `
 
 func (q *Queries) CloseOrderBill(ctx context.Context, id uuid.UUID) (Order, error) {
@@ -29,6 +29,7 @@ func (q *Queries) CloseOrderBill(ctx context.Context, id uuid.UUID) (Order, erro
 		&i.CartID,
 		&i.Status,
 		&i.CreatedAt,
+		&i.Note,
 	)
 	return i, err
 }
@@ -39,10 +40,11 @@ INSERT INTO orders (
     table_session_id,
     customer_session_id,
     cart_id,
-    status
+    status,
+    note
 )
-VALUES ($1,$2,$3,$4,'pending')
-RETURNING id, table_session_id, customer_session_id, cart_id, status, created_at
+VALUES ($1,$2,$3,$4,'pending',$5)
+RETURNING id, table_session_id, customer_session_id, cart_id, status, created_at, note
 `
 
 type CreateOrderParams struct {
@@ -50,6 +52,7 @@ type CreateOrderParams struct {
 	TableSessionID    uuid.UUID
 	CustomerSessionID uuid.UUID
 	CartID            uuid.UUID
+	Note              string
 }
 
 func (q *Queries) CreateOrder(ctx context.Context, arg CreateOrderParams) (Order, error) {
@@ -58,6 +61,7 @@ func (q *Queries) CreateOrder(ctx context.Context, arg CreateOrderParams) (Order
 		arg.TableSessionID,
 		arg.CustomerSessionID,
 		arg.CartID,
+		arg.Note,
 	)
 	var i Order
 	err := row.Scan(
@@ -67,6 +71,7 @@ func (q *Queries) CreateOrder(ctx context.Context, arg CreateOrderParams) (Order
 		&i.CartID,
 		&i.Status,
 		&i.CreatedAt,
+		&i.Note,
 	)
 	return i, err
 }
@@ -107,7 +112,7 @@ func (q *Queries) CreateOrderItem(ctx context.Context, arg CreateOrderItemParams
 }
 
 const getOrderByID = `-- name: GetOrderByID :one
-SELECT id, table_session_id, customer_session_id, cart_id, status, created_at
+SELECT id, table_session_id, customer_session_id, cart_id, status, created_at, note
 FROM orders
 WHERE id = $1
 `
@@ -122,6 +127,7 @@ func (q *Queries) GetOrderByID(ctx context.Context, id uuid.UUID) (Order, error)
 		&i.CartID,
 		&i.Status,
 		&i.CreatedAt,
+		&i.Note,
 	)
 	return i, err
 }
@@ -173,7 +179,7 @@ func (q *Queries) GetOrderItemsByOrder(ctx context.Context, orderID uuid.UUID) (
 }
 
 const getOrdersByTableSession = `-- name: GetOrdersByTableSession :many
-SELECT id, table_session_id, customer_session_id, cart_id, status, created_at
+SELECT id, table_session_id, customer_session_id, cart_id, status, created_at, note
 FROM orders
 WHERE table_session_id = $1
 ORDER BY created_at DESC
@@ -195,6 +201,7 @@ func (q *Queries) GetOrdersByTableSession(ctx context.Context, tableSessionID uu
 			&i.CartID,
 			&i.Status,
 			&i.CreatedAt,
+			&i.Note,
 		); err != nil {
 			return nil, err
 		}
@@ -214,6 +221,7 @@ SELECT
     o.cart_id,
     o.status,
     o.created_at,
+    o.note,
     t.table_number
 FROM orders o
 JOIN table_sessions ts ON ts.id = o.table_session_id
@@ -230,6 +238,7 @@ type GetRecentOrdersByBranchRow struct {
 	CartID            uuid.UUID
 	Status            string
 	CreatedAt         time.Time
+	Note              string
 	TableNumber       int32
 }
 
@@ -249,6 +258,7 @@ func (q *Queries) GetRecentOrdersByBranch(ctx context.Context, branchID uuid.UUI
 			&i.CartID,
 			&i.Status,
 			&i.CreatedAt,
+			&i.Note,
 			&i.TableNumber,
 		); err != nil {
 			return nil, err
@@ -266,7 +276,7 @@ UPDATE orders
 SET status = $3
 WHERE id = $1
 AND status = $2
-RETURNING id, table_session_id, customer_session_id, cart_id, status, created_at
+RETURNING id, table_session_id, customer_session_id, cart_id, status, created_at, note
 `
 
 type UpdateOrderStatusSafeParams struct {
@@ -286,6 +296,7 @@ func (q *Queries) UpdateOrderStatusSafe(ctx context.Context, arg UpdateOrderStat
 		&i.CartID,
 		&i.Status,
 		&i.CreatedAt,
+		&i.Note,
 	)
 	return i, err
 }

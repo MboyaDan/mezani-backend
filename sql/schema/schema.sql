@@ -151,7 +151,8 @@ CREATE TABLE orders (
     customer_session_id UUID REFERENCES customer_sessions(id),
     cart_id             UUID REFERENCES shared_carts(id),
     status              TEXT NOT NULL,
-    created_at          TIMESTAMP DEFAULT NOW()
+    created_at          TIMESTAMP DEFAULT NOW(),
+    note                TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE order_items (

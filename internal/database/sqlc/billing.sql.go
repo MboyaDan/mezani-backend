@@ -13,7 +13,7 @@ import (
 )
 
 const getOrdersBySession = `-- name: GetOrdersBySession :many
-SELECT o.id, o.table_session_id, o.customer_session_id, o.cart_id, o.status, o.created_at
+SELECT o.id, o.table_session_id, o.customer_session_id, o.cart_id, o.status, o.created_at, o.note
 FROM orders o
 WHERE o.customer_session_id IN (
     SELECT cs.id
@@ -38,6 +38,7 @@ func (q *Queries) GetOrdersBySession(ctx context.Context, tableSessionID uuid.UU
 			&i.CartID,
 			&i.Status,
 			&i.CreatedAt,
+			&i.Note,
 		); err != nil {
 			return nil, err
 		}
