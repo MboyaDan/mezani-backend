@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	db "mezzani_backend/internal/database/sqlc"
@@ -13,6 +14,9 @@ import (
 
 	"github.com/google/uuid"
 )
+
+// maxOrderNoteLen caps a guest's free-text note (characters, not bytes).
+const maxOrderNoteLen = 300
 
 type OrderService struct {
 	Queries   *db.Queries
@@ -41,7 +45,14 @@ func (s *OrderService) SubmitCart(
 	tableSessionID uuid.UUID,
 	customerSessionID uuid.UUID,
 	cartID uuid.UUID,
+	note string,
 ) (db.Order, error) {
+
+	// Guest note: trimmed and capped (the handler also validates max 300 characters).
+	note = strings.TrimSpace(note)
+	if r := []rune(note); len(r) > maxOrderNoteLen {
+		note = string(r[:maxOrderNoteLen])
+	}
 
 	session, err := s.Queries.GetTableSession(ctx, tableSessionID)
 	if err != nil {
@@ -61,6 +72,7 @@ func (s *OrderService) SubmitCart(
 		TableSessionID:    tableSessionID,
 		CustomerSessionID: customerSessionID,
 		CartID:            cartID,
+		Note:              note,
 	})
 	if err != nil {
 		return db.Order{}, err
@@ -132,6 +144,7 @@ func (s *OrderService) SubmitCart(
 		TableID:     tableSessionID.String(),
 		TableNumber: tableNumber,
 		Items:       items,
+		Note:        note,
 	}
 
 	if err := s.EventBus.Publish("orders.new", event); err != nil {
@@ -280,6 +293,7 @@ type OrderWithItems struct {
 	CreatedAt      time.Time   `json:"created_at"`
 	Items          []OrderItem `json:"items"`
 	Total          float64     `json:"total"`
+	Note           string      `json:"note"`
 }
 
 type OrderItem struct {
@@ -320,6 +334,7 @@ func (s *OrderService) GetRecentOrders(ctx context.Context, branchID uuid.UUID) 
 			CreatedAt:      o.CreatedAt,
 			Items:          orderItems,
 			Total:          total,
+			Note:           o.Note,
 		})
 	}
 	return result, nil

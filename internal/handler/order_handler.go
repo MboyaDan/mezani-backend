@@ -36,6 +36,8 @@ type SubmitCartRequest struct {
 	TableSessionID    string `json:"table_session_id"    binding:"required,uuid"`
 	CustomerSessionID string `json:"customer_session_id" binding:"required,uuid"`
 	CartID            string `json:"cart_id"             binding:"required,uuid"`
+	// Optional guest note for the kitchen ("no onions", allergy details).
+	Note string `json:"note" binding:"omitempty,max=300"`
 }
 
 //
@@ -84,6 +86,7 @@ func (h *OrderHandler) SubmitCart(c *gin.Context) {
 		tableSessionID,
 		customerSessionID,
 		cartID,
+		req.Note,
 	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

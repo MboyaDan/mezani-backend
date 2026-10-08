@@ -93,6 +93,7 @@ type Order struct {
 	CartID            uuid.UUID
 	Status            string
 	CreatedAt         time.Time
+	Note              string
 }
 
 type OrderItem struct {
