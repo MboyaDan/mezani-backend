@@ -7,6 +7,7 @@ import (
 	"log"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	db "mezzani_backend/internal/database/sqlc"
 	"mezzani_backend/internal/domain"
@@ -17,6 +18,10 @@ import (
 
 // maxOrderNoteLen caps a guest's free-text note (characters, not bytes).
 const maxOrderNoteLen = 300
+
+// ErrNoteTooLong is returned when a guest note exceeds maxOrderNoteLen.
+// The handler maps it to HTTP 400.
+var ErrNoteTooLong = fmt.Errorf("note must be %d characters or fewer", maxOrderNoteLen)
 
 type OrderService struct {
 	Queries   *db.Queries
@@ -48,10 +53,12 @@ func (s *OrderService) SubmitCart(
 	note string,
 ) (db.Order, error) {
 
-	// Guest note: trimmed and capped (the handler also validates max 300 characters).
+	// Guest note: trimmed, and rejected (never silently truncated) when too long.
+	// Cutting a note off could drop the part that matters, such as an allergy, and
+	// nobody would know.
 	note = strings.TrimSpace(note)
-	if r := []rune(note); len(r) > maxOrderNoteLen {
-		note = string(r[:maxOrderNoteLen])
+	if utf8.RuneCountInString(note) > maxOrderNoteLen {
+		return db.Order{}, ErrNoteTooLong
 	}
 
 	session, err := s.Queries.GetTableSession(ctx, tableSessionID)

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"log"
 	"net/http"
 
@@ -37,7 +38,9 @@ type SubmitCartRequest struct {
 	CustomerSessionID string `json:"customer_session_id" binding:"required,uuid"`
 	CartID            string `json:"cart_id"             binding:"required,uuid"`
 	// Optional guest note for the kitchen ("no onions", allergy details).
-	Note string `json:"note" binding:"omitempty,max=300"`
+	// Length is enforced once, in OrderService.SubmitCart (ErrNoteTooLong -> 400),
+	// so the limit and its error message live in one place.
+	Note string `json:"note"`
 }
 
 //
@@ -89,6 +92,10 @@ func (h *OrderHandler) SubmitCart(c *gin.Context) {
 		req.Note,
 	)
 	if err != nil {
+		if errors.Is(err, service.ErrNoteTooLong) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
