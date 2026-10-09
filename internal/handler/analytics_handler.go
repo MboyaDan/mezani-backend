@@ -18,6 +18,20 @@ func NewAnalyticsHandler(s *service.AnalyticsService) *AnalyticsHandler {
 	return &AnalyticsHandler{Service: s}
 }
 
+// parseRangeDays maps the ?range= query value to a window length in days.
+// Empty defaults to 30 days.
+func parseRangeDays(r string) (int32, bool) {
+	switch r {
+	case "", "30d":
+		return 30, true
+	case "7d":
+		return 7, true
+	case "today":
+		return 1, true
+	}
+	return 0, false
+}
+
 func (h *AnalyticsHandler) Dashboard(c *gin.Context) {
 	branchID, err := uuid.Parse(c.Query("branch_id"))
 	if err != nil {
@@ -27,7 +41,15 @@ func (h *AnalyticsHandler) Dashboard(c *gin.Context) {
 		return
 	}
 
-	data, err := h.Service.GetDashboard(c.Request.Context(), branchID)
+	days, ok := parseRangeDays(c.Query("range"))
+	if !ok {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+			"error": "range must be one of: today, 7d, 30d",
+		})
+		return
+	}
+
+	data, err := h.Service.GetDashboard(c.Request.Context(), branchID, days)
 	if err != nil {
 
 		// TODO: add structured logging

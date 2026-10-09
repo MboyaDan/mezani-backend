@@ -93,7 +93,7 @@ func (q *Queries) GetAILowStockItems(ctx context.Context, branchID uuid.UUID) ([
 
 const getAIPeakHours = `-- name: GetAIPeakHours :many
 SELECT
-    EXTRACT(HOUR FROM o.created_at)::int AS hour,
+    EXTRACT(HOUR FROM (o.created_at AT TIME ZONE 'UTC') AT TIME ZONE 'Africa/Nairobi')::int AS hour,
     COUNT(*)::int                         AS order_count
 FROM orders o
 JOIN table_sessions ts ON ts.id = o.table_session_id
@@ -203,12 +203,13 @@ JOIN menu_items mi ON oi.menu_item_id = mi.id
 JOIN table_sessions ts ON o.table_session_id = ts.id
 JOIN tables t ON ts.table_id = t.id
 WHERE o.status = 'paid'
-AND o.created_at >= CURRENT_DATE
-AND o.created_at <  CURRENT_DATE + INTERVAL '1 day'
+AND o.created_at >= ((date_trunc('day', NOW() AT TIME ZONE 'Africa/Nairobi')) AT TIME ZONE 'Africa/Nairobi') AT TIME ZONE 'UTC'
+AND o.created_at <  ((date_trunc('day', NOW() AT TIME ZONE 'Africa/Nairobi') + INTERVAL '1 day') AT TIME ZONE 'Africa/Nairobi') AT TIME ZONE 'UTC'
 AND t.branch_id = $1
 `
 
-// Fix: range comparison instead of DATE() so the index on created_at is used
+// "Today" is the Nairobi calendar day, not the UTC day (created_at is stored as UTC).
+// The bounds are converted back to UTC so the index on created_at is still used.
 func (q *Queries) GetDailySales(ctx context.Context, branchID uuid.UUID) (interface{}, error) {
 	row := q.db.QueryRow(ctx, getDailySales, branchID)
 	var total_sales interface{}
@@ -216,27 +217,80 @@ func (q *Queries) GetDailySales(ctx context.Context, branchID uuid.UUID) (interf
 	return total_sales, err
 }
 
+const getPaymentsByMethod = `-- name: GetPaymentsByMethod :many
+SELECT
+    p.method,
+    COALESCE(SUM(p.amount), 0)::float8 AS total,
+    COUNT(*)::int                      AS payment_count
+FROM payments p
+WHERE p.branch_id = $1
+AND p.status = 'confirmed'
+AND p.created_at >= ((date_trunc('day', NOW() AT TIME ZONE 'Africa/Nairobi') - (($2::int - 1) * INTERVAL '1 day')) AT TIME ZONE 'Africa/Nairobi') AT TIME ZONE 'UTC'
+GROUP BY p.method
+ORDER BY total DESC
+`
+
+type GetPaymentsByMethodParams struct {
+	BranchID uuid.UUID
+	Days     int32
+}
+
+type GetPaymentsByMethodRow struct {
+	Method       string
+	Total        float64
+	PaymentCount int32
+}
+
+// Confirmed payments by method (cash / mpesa) over the last N Nairobi days.
+func (q *Queries) GetPaymentsByMethod(ctx context.Context, arg GetPaymentsByMethodParams) ([]GetPaymentsByMethodRow, error) {
+	rows, err := q.db.Query(ctx, getPaymentsByMethod, arg.BranchID, arg.Days)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetPaymentsByMethodRow
+	for rows.Next() {
+		var i GetPaymentsByMethodRow
+		if err := rows.Scan(&i.Method, &i.Total, &i.PaymentCount); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getPeakHours = `-- name: GetPeakHours :many
 SELECT
-    EXTRACT(HOUR FROM o.created_at) AS hour,
+    EXTRACT(HOUR FROM (o.created_at AT TIME ZONE 'UTC') AT TIME ZONE 'Africa/Nairobi') AS hour,
     COUNT(*) AS order_count
 FROM orders o
 JOIN table_sessions ts ON o.table_session_id = ts.id
 JOIN tables t ON ts.table_id = t.id
 WHERE t.branch_id = $1
 AND o.status IN ('paid', 'served')
+AND o.created_at >= ((date_trunc('day', NOW() AT TIME ZONE 'Africa/Nairobi') - (($2::int - 1) * INTERVAL '1 day')) AT TIME ZONE 'Africa/Nairobi') AT TIME ZONE 'UTC'
 GROUP BY hour
-ORDER BY order_count DESC
+ORDER BY hour ASC
 `
+
+type GetPeakHoursParams struct {
+	BranchID uuid.UUID
+	Days     int32
+}
 
 type GetPeakHoursRow struct {
 	Hour       pgtype.Numeric
 	OrderCount int64
 }
 
-// Fix: filter to meaningful statuses only
-func (q *Queries) GetPeakHours(ctx context.Context, branchID uuid.UUID) ([]GetPeakHoursRow, error) {
-	rows, err := q.db.Query(ctx, getPeakHours, branchID)
+// Orders per hour of the Nairobi day over the last N days, in clock order.
+// (Hours were previously UTC and sorted by count, so the chart was 3 hours off
+// and its x-axis was not chronological.)
+func (q *Queries) GetPeakHours(ctx context.Context, arg GetPeakHoursParams) ([]GetPeakHoursRow, error) {
+	rows, err := q.db.Query(ctx, getPeakHours, arg.BranchID, arg.Days)
 	if err != nil {
 		return nil, err
 	}
@@ -258,7 +312,8 @@ func (q *Queries) GetPeakHours(ctx context.Context, branchID uuid.UUID) ([]GetPe
 const getPopularItems = `-- name: GetPopularItems :many
 SELECT
     mi.name,
-    SUM(oi.quantity) AS total_sold
+    SUM(oi.quantity) AS total_sold,
+    COALESCE(SUM(mi.price * oi.quantity), 0)::float8 AS revenue
 FROM order_items oi
 JOIN orders o ON oi.order_id = o.id
 JOIN menu_items mi ON oi.menu_item_id = mi.id
@@ -266,19 +321,26 @@ JOIN table_sessions ts ON o.table_session_id = ts.id
 JOIN tables t ON ts.table_id = t.id
 WHERE t.branch_id = $1
 AND o.status IN ('paid', 'served')
+AND o.created_at >= ((date_trunc('day', NOW() AT TIME ZONE 'Africa/Nairobi') - (($2::int - 1) * INTERVAL '1 day')) AT TIME ZONE 'Africa/Nairobi') AT TIME ZONE 'UTC'
 GROUP BY mi.name
 ORDER BY total_sold DESC
 LIMIT 5
 `
 
+type GetPopularItemsParams struct {
+	BranchID uuid.UUID
+	Days     int32
+}
+
 type GetPopularItemsRow struct {
 	Name      string
 	TotalSold int64
+	Revenue   float64
 }
 
-// Fix: filter to meaningful statuses only
-func (q *Queries) GetPopularItems(ctx context.Context, branchID uuid.UUID) ([]GetPopularItemsRow, error) {
-	rows, err := q.db.Query(ctx, getPopularItems, branchID)
+// Best sellers over the last N Nairobi days (N = days; 1 = today), by quantity, with revenue.
+func (q *Queries) GetPopularItems(ctx context.Context, arg GetPopularItemsParams) ([]GetPopularItemsRow, error) {
+	rows, err := q.db.Query(ctx, getPopularItems, arg.BranchID, arg.Days)
 	if err != nil {
 		return nil, err
 	}
@@ -286,7 +348,7 @@ func (q *Queries) GetPopularItems(ctx context.Context, branchID uuid.UUID) ([]Ge
 	var items []GetPopularItemsRow
 	for rows.Next() {
 		var i GetPopularItemsRow
-		if err := rows.Scan(&i.Name, &i.TotalSold); err != nil {
+		if err := rows.Scan(&i.Name, &i.TotalSold, &i.Revenue); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -316,4 +378,39 @@ func (q *Queries) GetReturningCustomers(ctx context.Context, branchID uuid.UUID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
+}
+
+const getSalesSummary = `-- name: GetSalesSummary :one
+SELECT
+    COALESCE(SUM(mi.price * oi.quantity), 0)::float8 AS total_sales,
+    COUNT(DISTINCT o.id)::int                        AS order_count
+FROM orders o
+JOIN order_items oi ON o.id = oi.order_id
+JOIN menu_items mi ON oi.menu_item_id = mi.id
+JOIN table_sessions ts ON o.table_session_id = ts.id
+JOIN tables t ON ts.table_id = t.id
+WHERE o.status = 'paid'
+AND t.branch_id = $1
+AND o.created_at >= ((date_trunc('day', NOW() AT TIME ZONE 'Africa/Nairobi') - (($2::int * ($3::int + 1) - 1) * INTERVAL '1 day')) AT TIME ZONE 'Africa/Nairobi') AT TIME ZONE 'UTC'
+AND o.created_at <  ((date_trunc('day', NOW() AT TIME ZONE 'Africa/Nairobi') - (($2::int * $3::int - 1) * INTERVAL '1 day')) AT TIME ZONE 'Africa/Nairobi') AT TIME ZONE 'UTC'
+`
+
+type GetSalesSummaryParams struct {
+	BranchID uuid.UUID
+	Days     int32
+	Period   int32
+}
+
+type GetSalesSummaryRow struct {
+	TotalSales float64
+	OrderCount int32
+}
+
+// Paid sales and number of paid orders for one period of `days` Nairobi days.
+// period 0 = the current period (ending today), 1 = the period before it.
+func (q *Queries) GetSalesSummary(ctx context.Context, arg GetSalesSummaryParams) (GetSalesSummaryRow, error) {
+	row := q.db.QueryRow(ctx, getSalesSummary, arg.BranchID, arg.Days, arg.Period)
+	var i GetSalesSummaryRow
+	err := row.Scan(&i.TotalSales, &i.OrderCount)
+	return i, err
 }
