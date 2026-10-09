@@ -135,6 +135,9 @@ func SetupRouter(
 	protected.Use(middleware.RelaxedRateLimit())
 	protected.Use(middleware.SubscriptionGuard(getTenantSubscriptionExpiry))
 	{
+		// ----- Live updates: exchange the access token for a WebSocket ticket -----
+		protected.POST("/ws/ticket", wsHandler.IssueTicket)
+
 		// ----- Manager — Tables (view + manage, no add) -----
 		manager := protected.Group("/manager")
 		manager.Use(middleware.RequirePermission("manage_tables"))
