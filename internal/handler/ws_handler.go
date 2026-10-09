@@ -15,6 +15,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
+	"github.com/jackc/pgx/v5"
 )
 
 // BranchLookup is the one thing the WebSocket handler needs from the branch
@@ -93,9 +94,20 @@ func (h *WSHandler) IssueTicket(c *gin.Context) {
 	userID := c.GetString("user_id")
 	tokenBranchID := c.GetString("branch_id")
 
+	// Only "no such branch" is an authorization answer. Any other failure (timeout,
+	// connection loss, ...) is OUR problem: answering 403 would tell valid staff they
+	// are not allowed and would log an outage as an access denial.
 	branchTenantID := ""
-	if branch, err := h.Branches.GetBranchByID(c.Request.Context(), branchID); err == nil {
+	branch, err := h.Branches.GetBranchByID(c.Request.Context(), branchID)
+	switch {
+	case err == nil:
 		branchTenantID = branch.TenantID.String()
+	case errors.Is(err, pgx.ErrNoRows):
+		// Missing branch: falls through to the same uniform 403 as any other refusal.
+	default:
+		log.Printf("ws ticket: branch lookup failed | user=%s branch=%s err=%v", userID, branchID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not verify branch access, please try again"})
+		return
 	}
 
 	if err := notifications.AuthorizeBranchSubscription(
