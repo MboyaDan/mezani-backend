@@ -199,7 +199,7 @@ func main() {
 	)
 
 	inventoryHandler := handler.NewInventoryHandler(inventoryService)
-	wsHandler := handler.NewWSHandler(hub)
+	wsHandler := handler.NewWSHandler(hub, []byte(cfg.JWTSecret), branchService)
 	passwordResetHandler := handler.NewPasswordResetHandler(passwordResetService)
 	aiHandler := handler.NewAIHandler(aiService)
 
