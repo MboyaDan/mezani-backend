@@ -1,5 +1,6 @@
 -- name: GetDailySales :one
--- Fix: range comparison instead of DATE() so the index on created_at is used
+-- "Today" is the Nairobi calendar day, not the UTC day (created_at is stored as UTC).
+-- The bounds are converted back to UTC so the index on created_at is still used.
 SELECT
     COALESCE(SUM(mi.price * oi.quantity), 0) AS total_sales
 FROM orders o
@@ -8,38 +9,72 @@ JOIN menu_items mi ON oi.menu_item_id = mi.id
 JOIN table_sessions ts ON o.table_session_id = ts.id
 JOIN tables t ON ts.table_id = t.id
 WHERE o.status = 'paid'
-AND o.created_at >= CURRENT_DATE
-AND o.created_at <  CURRENT_DATE + INTERVAL '1 day'
+AND o.created_at >= ((date_trunc('day', NOW() AT TIME ZONE 'Africa/Nairobi')) AT TIME ZONE 'Africa/Nairobi') AT TIME ZONE 'UTC'
+AND o.created_at <  ((date_trunc('day', NOW() AT TIME ZONE 'Africa/Nairobi') + INTERVAL '1 day') AT TIME ZONE 'Africa/Nairobi') AT TIME ZONE 'UTC'
 AND t.branch_id = $1;
 
 -- name: GetPopularItems :many
--- Fix: filter to meaningful statuses only
+-- Best sellers over the last N Nairobi days (N = days; 1 = today), by quantity, with revenue.
 SELECT
     mi.name,
-    SUM(oi.quantity) AS total_sold
+    SUM(oi.quantity) AS total_sold,
+    COALESCE(SUM(mi.price * oi.quantity), 0)::float8 AS revenue
 FROM order_items oi
 JOIN orders o ON oi.order_id = o.id
 JOIN menu_items mi ON oi.menu_item_id = mi.id
 JOIN table_sessions ts ON o.table_session_id = ts.id
 JOIN tables t ON ts.table_id = t.id
-WHERE t.branch_id = $1
+WHERE t.branch_id = sqlc.arg(branch_id)
 AND o.status IN ('paid', 'served')
+AND o.created_at >= ((date_trunc('day', NOW() AT TIME ZONE 'Africa/Nairobi') - ((sqlc.arg(days)::int - 1) * INTERVAL '1 day')) AT TIME ZONE 'Africa/Nairobi') AT TIME ZONE 'UTC'
 GROUP BY mi.name
 ORDER BY total_sold DESC
 LIMIT 5;
 
 -- name: GetPeakHours :many
--- Fix: filter to meaningful statuses only
+-- Orders per hour of the Nairobi day over the last N days, in clock order.
+-- (Hours were previously UTC and sorted by count, so the chart was 3 hours off
+-- and its x-axis was not chronological.)
 SELECT
-    EXTRACT(HOUR FROM o.created_at) AS hour,
+    EXTRACT(HOUR FROM (o.created_at AT TIME ZONE 'UTC') AT TIME ZONE 'Africa/Nairobi') AS hour,
     COUNT(*) AS order_count
 FROM orders o
 JOIN table_sessions ts ON o.table_session_id = ts.id
 JOIN tables t ON ts.table_id = t.id
-WHERE t.branch_id = $1
+WHERE t.branch_id = sqlc.arg(branch_id)
 AND o.status IN ('paid', 'served')
+AND o.created_at >= ((date_trunc('day', NOW() AT TIME ZONE 'Africa/Nairobi') - ((sqlc.arg(days)::int - 1) * INTERVAL '1 day')) AT TIME ZONE 'Africa/Nairobi') AT TIME ZONE 'UTC'
 GROUP BY hour
-ORDER BY order_count DESC;
+ORDER BY hour ASC;
+
+-- name: GetSalesSummary :one
+-- Paid sales and number of paid orders for one period of `days` Nairobi days.
+-- period 0 = the current period (ending today), 1 = the period before it.
+SELECT
+    COALESCE(SUM(mi.price * oi.quantity), 0)::float8 AS total_sales,
+    COUNT(DISTINCT o.id)::int                        AS order_count
+FROM orders o
+JOIN order_items oi ON o.id = oi.order_id
+JOIN menu_items mi ON oi.menu_item_id = mi.id
+JOIN table_sessions ts ON o.table_session_id = ts.id
+JOIN tables t ON ts.table_id = t.id
+WHERE o.status = 'paid'
+AND t.branch_id = sqlc.arg(branch_id)
+AND o.created_at >= ((date_trunc('day', NOW() AT TIME ZONE 'Africa/Nairobi') - ((sqlc.arg(days)::int * (sqlc.arg(period)::int + 1) - 1) * INTERVAL '1 day')) AT TIME ZONE 'Africa/Nairobi') AT TIME ZONE 'UTC'
+AND o.created_at <  ((date_trunc('day', NOW() AT TIME ZONE 'Africa/Nairobi') - ((sqlc.arg(days)::int * sqlc.arg(period)::int - 1) * INTERVAL '1 day')) AT TIME ZONE 'Africa/Nairobi') AT TIME ZONE 'UTC';
+
+-- name: GetPaymentsByMethod :many
+-- Confirmed payments by method (cash / mpesa) over the last N Nairobi days.
+SELECT
+    p.method,
+    COALESCE(SUM(p.amount), 0)::float8 AS total,
+    COUNT(*)::int                      AS payment_count
+FROM payments p
+WHERE p.branch_id = sqlc.arg(branch_id)
+AND p.status = 'confirmed'
+AND p.created_at >= ((date_trunc('day', NOW() AT TIME ZONE 'Africa/Nairobi') - ((sqlc.arg(days)::int - 1) * INTERVAL '1 day')) AT TIME ZONE 'Africa/Nairobi') AT TIME ZONE 'UTC'
+GROUP BY p.method
+ORDER BY total DESC;
 
 -- name: GetReturningCustomers :one
 -- Fix: filter to meaningful statuses only
@@ -93,7 +128,7 @@ LIMIT 5;
 
 -- name: GetAIPeakHours :many
 SELECT
-    EXTRACT(HOUR FROM o.created_at)::int AS hour,
+    EXTRACT(HOUR FROM (o.created_at AT TIME ZONE 'UTC') AT TIME ZONE 'Africa/Nairobi')::int AS hour,
     COUNT(*)::int                         AS order_count
 FROM orders o
 JOIN table_sessions ts ON ts.id = o.table_session_id
